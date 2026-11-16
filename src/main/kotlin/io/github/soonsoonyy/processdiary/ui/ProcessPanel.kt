@@ -416,11 +416,14 @@ class ProcessPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
         val count = checked.size
         val total = Fmt.mem(checked.sumOf { it.rssBytes })
         actionBar.add(JBLabel("<html>" + PD.msg("actionbar.summary", count, total) + "</html>"))
-        actionBar.add(JButton(PD.msg("actionbar.uncheck")).apply { addActionListener { this@ProcessPanel.model.checked.clear(); table.repaint(); updateActionBar() } })
-        actionBar.add(JButton(PD.msg("actionbar.killChecked")).apply { addActionListener { ProcessActions.kill(project, checkedProcs(), false) } })
-        actionBar.add(JButton(PD.msg("kill.verb.force")).apply { addActionListener { ProcessActions.kill(project, checkedProcs(), true) } })
+        actionBar.add(bannerButton(PD.msg("actionbar.uncheck")).apply { addActionListener { this@ProcessPanel.model.checked.clear(); table.repaint(); updateActionBar() } })
+        actionBar.add(bannerButton(PD.msg("actionbar.killChecked")).apply { addActionListener { ProcessActions.kill(project, checkedProcs(), false) } })
+        actionBar.add(bannerButton(PD.msg("kill.verb.force")).apply { addActionListener { ProcessActions.kill(project, checkedProcs(), true) } })
         actionBar.revalidate(); actionBar.repaint()
     }
+
+    /** 색이 있는 막대 위의 버튼: 둥근 모양 바깥을 칠하지 않게 (안 그러면 버튼 둘레에 네모난 배경이 보임) */
+    private fun bannerButton(text: String) = JButton(text).apply { isOpaque = false }
 
     private fun checkedProcs(): List<ProcInfo> = model.checked.mapNotNull { service.byPid[it] }
     private fun selectedProcs(): List<ProcInfo> = table.selectedRows.toList().mapNotNull { model.rows.getOrNull(it)?.p }
