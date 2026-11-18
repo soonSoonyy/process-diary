@@ -38,6 +38,8 @@
     <statusBarWidgetFactory id="io.github.soonsoonyy.processdiary.status"
                             implementation="io.github.soonsoonyy.processdiary.ui.StatusWidgetFactory" order="first"/>
     <notificationGroup id="Process Diary" displayType="BALLOON"/>
+    <!-- IDE 오류 창에서 GitHub 이슈로 보고 -->
+    <errorHandler implementation="io.github.soonsoonyy.processdiary.update.GitHubErrorReporter"/>
     <postStartupActivity implementation="io.github.soonsoonyy.processdiary.update.UpdateRepositoryActivity"/>
     <postStartupActivity implementation="io.github.soonsoonyy.processdiary.alerts.AlertStartActivity"/>
     <applicationConfigurable parentId="tools" id="io.github.soonsoonyy.processdiary.settings" displayName="Process Diary"
