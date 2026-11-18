@@ -93,6 +93,31 @@ GitHub Actions에서 **Ubuntu · macOS · Windows** 세 OS 모두 빌드와 테�
 ![Java 모니터링](docs/screenshots/java-monitoring.png)
 ![GC 경고](docs/screenshots/gc-alert.png)
 
+### 실행 설정 연결 (1.3.0)
+- IDE에서 Run/Debug로 띄운 프로세스(와 그 하위 프로세스)에 **어떤 Run 설정인지** 표시: `node ▶ Dev server`, `CatalogApplication java ▶ Catalog service`
+- 보기 범위 **IDE 실행**, 검색에서 Run 설정 이름으로 찾기
+- 상세 패널의 **Run 창에서 보기**, 그리고 "종료"는 IDE를 통해 멈춰서 Run 창 상태와 어긋나지 않음
+
+![IDE 실행](docs/screenshots/ide-runs.png)
+
+### Spring Boot Actuator (1.3.0)
+Java 프로세스가 연 포트에 `/actuator`가 있으면 상세 패널에 표시합니다 (기본 경로 `/actuator`, `/manage`, `/management`).
+- **상태**(UP / DOWN 등)와 구성 요소별 상태(db, redis, diskSpace …): `management.endpoint.health.show-components=always`일 때
+- **앱 이름·버전**(info), 공개된 **엔드포인트 링크**(health, info, metrics, env, loggers, mappings …)
+- 보안이 걸려 있으면 "로그인 필요"로 표시. 이 컴퓨터(127.0.0.1)로만 요청합니다.
+
+![Actuator](docs/screenshots/actuator-run-config.png)
+
+### 다이어리 탭 (1.3.0)
+- 실행 시작/종료(실행 시간, 종료 코드), 포트 충돌과 자동 처리, 종료한 프로세스, 사용량·GC 경고, Docker·Java 동작을 **시간순으로 저장** (IDE를 다시 켜도 남음, 최근 2000개)
+- 종류별 보기, 이 프로젝트만, 검색, 복사, 지우기. 두 번 클릭하면 아직 살아 있는 프로세스로 이동
+- **GC 후 힙 추이**: 1분마다 가장 낮은 힙을 6시간 동안 기록해 상세 패널에 그래프로 보여 주고, 1시간 넘게 꾸준히 오르면 "메모리 누수일 수 있음"을 다이어리에 남깁니다
+
+![다이어리](docs/screenshots/diary.png)
+
+### 오류 보고
+IDE 오류 창(오른쪽 아래 빨간 표시)에서 이 플러그인의 오류는 **GitHub에 보고**를 누르면 내용이 채워진 이슈 페이지가 브라우저로 열립니다. 직접 올리기 전에는 아무것도 전송되지 않습니다.
+
 ### 컨테이너 탭 (Docker, 1.3.0)
 - 컨테이너 목록, 상태, **게시 포트**, CPU, 메모리, compose 프로젝트
 - 우클릭: 정지 · 시작 · 재시작 · 삭제(멈춘 것만, 확인 후), 브라우저에서 포트 열기, 이름·ID·`docker logs` 명령 복사

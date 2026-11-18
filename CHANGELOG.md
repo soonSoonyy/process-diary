@@ -8,6 +8,10 @@
 - Java monitoring: heap graph (used / reserved / max), GC time graph, GC count and pause time, metaspace, threads, loaded classes; "Java processes" scope
 - Java actions: thread dump (opens in an editor tab), heap dump (.hprof, after a confirmation) and Run GC, using jcmd
 - GC alert: notify when a Java process spends too much time in GC (default 25% over the alert period), even with the tool window closed
+- Run configurations: processes started from the IDE show their run configuration name; "IDE runs" scope; "Show in Run window"; Stop goes through the IDE
+- Spring Boot Actuator: health status and components, app name and version, and endpoint links in the detail panel
+- Diary tab: a saved log of runs, port conflicts, stopped processes, alerts and Docker / Java actions, with filters; heap-after-GC trend over 6 hours with a memory leak hint
+- "Report on GitHub" in the IDE error dialog opens a prefilled issue
 - Containers tab: Docker containers with published ports, CPU and memory; start, stop, restart, remove; "This project only" for docker compose
 - Port conflicts caused by a Docker container now offer "Stop container and rerun" instead of stopping Docker's port forwarder
 - Usage alerts: notify when CPU or memory stays above a limit (default 90% for 1 minute), with the top processes and a Stop button
@@ -19,6 +23,10 @@
 - Java 모니터링: 힙 그래프(사용/확보/최대), GC 시간 그래프, GC 횟수·멈춘 시간, 메타스페이스, 스레드, 클래스 수, "Java 프로세스" 보기
 - Java 동작: 스레드 덤프(편집기 탭으로 열림), 힙 덤프(.hprof, 확인 후), GC 실행
 - GC 경고: Java 프로세스가 GC에 시간을 너무 많이 쓰면 알림 (기본 25%), 도구 창을 닫아도 동작
+- 실행 설정 연결: IDE에서 실행한 프로세스에 Run 설정 이름 표시, "IDE 실행" 보기, Run 창에서 보기, 종료는 IDE를 통해
+- Spring Boot Actuator: 상태(health)와 구성 요소, 앱 이름·버전, 엔드포인트 링크
+- 다이어리 탭: 실행·포트 충돌·종료·경고·Docker/Java 동작 기록 (저장됨), GC 후 힙 6시간 추이와 메모리 누수 의심 기록
+- IDE 오류 창에서 "GitHub에 보고"로 내용이 채워진 이슈 열기
 - 컨테이너 탭: Docker 컨테이너 목록, 게시 포트, 시작·정지·재시작·삭제
 - Docker 컨테이너 때문에 생긴 포트 충돌은 "컨테이너 정지 후 다시 실행"으로 해결
 - 사용량 경고: CPU나 메모리가 기준(기본 90%, 1분)을 계속 넘으면 알림
