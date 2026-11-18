@@ -38,11 +38,23 @@ class DetailPanel(
     private val onSelect: (Int) -> Unit,
     private val onSearchCwd: (String) -> Unit,
     private val onKill: (ProcInfo, Boolean) -> Unit,
+    /** Java 동작: "threadDump" / "heapDump" / "gc" */
+    private val onJava: (ProcInfo, String) -> Unit = { _, _ -> },
 ) : JPanel(BorderLayout()) {
     private val title = JBLabel().apply { font = JBFont.h3().asBold() }
     private val subtitle = JBLabel().apply { foreground = UIUtil.getContextHelpForeground() }
     private val cpuChart = SparkChart(listOf(Palette.CPU), 64)
     private val memChart = SparkChart(listOf(Palette.MEM), 64)
+    /** Java: 힙(사용/확보)과 GC 시간 비율 */
+    private val heapChart = SparkChart(listOf(Palette.MEM, Palette.withAlpha(Palette.MEM, 110)), 64)
+    private val gcChart = SparkChart(listOf(Palette.DISK_W), 64)
+    private val javaCharts = JPanel(GridLayout(1, 2, JBUI.scale(10), 0)).apply {
+        isOpaque = false
+        border = JBUI.Borders.emptyTop(6)
+        add(heapChart)
+        add(gcChart)
+        isVisible = false
+    }
     private val html = JEditorPane().apply {
         editorKit = HTMLEditorKitBuilder.simple()
         isEditable = false
@@ -94,6 +106,7 @@ class DetailPanel(
         }
         header.add(head)
         header.add(charts)
+        header.add(javaCharts)
         html.border = JBUI.Borders.empty(0, 10, 6, 10)
         html.alignmentX = LEFT_ALIGNMENT
         header.alignmentX = LEFT_ALIGNMENT
@@ -116,6 +129,7 @@ class DetailPanel(
         subtitle.text = PD.msg("detail.empty.subtitle")
         cpuChart.isVisible = false
         memChart.isVisible = false
+        javaCharts.isVisible = false
         setHtml("<p style='color:${hex(UIUtil.getContextHelpForeground())}'>${PD.msg("detail.empty.hint")}</p>")
     }
 
@@ -127,7 +141,7 @@ class DetailPanel(
                 title.icon = null
                 title.text = "PID $gonePid"
                 subtitle.text = PD.msg("detail.gone")
-                cpuChart.isVisible = false; memChart.isVisible = false
+                cpuChart.isVisible = false; memChart.isVisible = false; javaCharts.isVisible = false
                 setHtml("")
             } else showEmpty()
             return
@@ -143,6 +157,21 @@ class DetailPanel(
         val mh = service.memHistory[p.pid]?.toList() ?: emptyList()
         val mmax = Fmt.niceMax(mh.maxOrNull() ?: 0.0, 16.0 * 1048576)
         memChart.setData(listOf(mh), mmax, PD.msg("chart.mem"), Fmt.mem(p.rssBytes), "%.1f%% · ".format(p.memPct) + service.historyLabel(), Fmt.bytes(mmax))
+        val jh = service.jvmHistory[p.pid]?.toList().orEmpty()
+        val st = p.jvm?.stats ?: jh.lastOrNull()
+        javaCharts.isVisible = st != null && st.heapUsed >= 0
+        if (st != null && st.heapUsed >= 0) {
+            val used = jh.map { it.heapUsed.toDouble() }
+            val committed = jh.map { it.heapCommitted.toDouble() }
+            val hmax = if (st.heapMax > 0) st.heapMax.toDouble() else Fmt.niceMax(committed.maxOrNull() ?: 0.0, 16.0 * 1048576)
+            heapChart.setData(listOf(used, committed), hmax, PD.msg("detail.java.heap"), Fmt.mem(st.heapUsed),
+                PD.msg("chart.heap.sub", Fmt.mem(maxOf(0, st.heapCommitted))), "", listOf(PD.msg("chart.heap.used"), PD.msg("chart.heap.committed")))
+            val gs = service.gcSeries(p.pid)
+            val gmax = maxOf(10.0, Math.ceil((gs.maxOrNull() ?: 0.0) / 10) * 10)
+            val recent = service.gcPercent(p.pid)
+            gcChart.setData(listOf(gs), gmax, PD.msg("chart.gc"), recent?.let { "%.1f%%".format(it) } ?: "-",
+                PD.msg("chart.gc.sub", service.historyLabel()), "${gmax.toInt()}%")
+        }
 
         val dim = hex(UIUtil.getContextHelpForeground())
         val link = hex(Palette.PORT)
@@ -170,9 +199,24 @@ class DetailPanel(
         fun kv(k: String, v: String) = sb.append("<tr><td style='color:$dim' valign='top' nowrap>$k</td><td>$v</td></tr>")
         if (jvm != null) {
             kv(PD.msg("detail.java.main"), esc(jvm.main))
-            if (jvm.heapUsed >= 0) kv(PD.msg("detail.java.heap"), esc(PD.msg("detail.java.heap.value", Fmt.mem(jvm.heapUsed), Fmt.mem(jvm.heapCommitted))))
-            else kv(PD.msg("detail.java.heap"), "<span style='color:$dim'>${PD.msg("detail.java.heap.unknown")}</span>")
-            if (jvm.javaVersion.isNotEmpty()) kv(PD.msg("detail.java.version"), esc(jvm.javaVersion))
+            if (st != null && st.heapUsed >= 0) {
+                kv(PD.msg("detail.java.heap"), esc(PD.msg("detail.java.heap.value", Fmt.mem(st.heapUsed), Fmt.mem(st.heapCommitted))) +
+                    if (st.heapMax > 0) esc(" · " + PD.msg("detail.java.heap.max", Fmt.mem(st.heapMax))) else "")
+                if (st.gcCount >= 0 && st.gcTimeMs >= 0) {
+                    val parts = buildList {
+                        if (st.youngGc >= 0) add(PD.msg("detail.java.gc.young", st.youngGc))
+                        if (st.fullGc >= 0) add(PD.msg("detail.java.gc.full", st.fullGc))
+                        if (st.otherGc > 0) add(PD.msg("detail.java.gc.other", st.otherGc))
+                    }.joinToString(" · ")
+                    kv(PD.msg("detail.java.gc"), esc(PD.msg("detail.java.gc.value", st.gcCount, "%.2f".format(st.gcTimeMs / 1000.0), parts)) +
+                        if (st.lastGcCause.isNotEmpty() && st.lastGcCause != "No GC") "<br><span style='color:$dim'>${esc(PD.msg("detail.java.gc.last", st.lastGcCause))}</span>" else "")
+                }
+                if (st.metaspaceUsed >= 0) kv(PD.msg("detail.java.metaspace"), esc(Fmt.memFine(st.metaspaceUsed)))
+                if (st.threads >= 0) kv(PD.msg("detail.java.threads"), esc(PD.msg("detail.java.threads.value", st.threads, maxOf(0, st.daemonThreads), maxOf(0, st.peakThreads))))
+                if (st.classes >= 0) kv(PD.msg("detail.java.classes"), esc(st.classes.toString()))
+            } else kv(PD.msg("detail.java.heap"), "<span style='color:$dim'>${PD.msg("detail.java.heap.unknown")}</span>")
+            val ver = listOf(jvm.javaVersion, st?.vmName.orEmpty(), st?.gcName.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · ")
+            if (ver.isNotEmpty()) kv(PD.msg("detail.java.version"), esc(ver))
         }
         kv(PD.msg("detail.uptime"), esc(Fmt.uptime(p.upTimeMs)))
         if (p.startTime > 0) kv(PD.msg("detail.started"), esc(SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date(p.startTime))))
@@ -203,6 +247,10 @@ class DetailPanel(
             sb.append(a("kill:15", "■ " + PD.msg("kill.verb")) + " &nbsp;&nbsp; " + a("kill:9", "■ " + PD.msg("kill.verb.force")) + " &nbsp;&nbsp; ")
         }
         sb.append(a("copy:${p.pid}", PD.msg("menu.copyPid")) + "</div>")
+        if (jvm != null) {
+            sb.append("<div style='margin-top:6px'>" + a("java:threadDump", PD.msg("java.threadDump")) + " &nbsp;&nbsp; " +
+                a("java:heapDump", PD.msg("java.heapDump") + "…") + " &nbsp;&nbsp; " + a("java:gc", PD.msg("java.gc")) + "</div>")
+        }
         setHtml(sb.toString())
         textBlocks.forEach { it.isVisible = true }
         setIfChanged(cmdText, d?.commandLine?.ifEmpty { p.path } ?: PD.msg("common.loading"))
@@ -226,6 +274,7 @@ class DetailPanel(
             d.startsWith("open:") -> d.substring(5).toIntOrNull()?.let { ProcessActions.openPort(it) }
             d.startsWith("kill:") && p != null -> onKill(p, d == "kill:9")
             d.startsWith("copy:") -> ProcessActions.copy(d.substring(5), null)
+            d.startsWith("java:") && p != null -> onJava(p, d.substring(5))
             d.startsWith("dstop:") -> docker("stop", d.substring(6))
             d.startsWith("drestart:") -> docker("restart", d.substring(9))
         }

@@ -54,6 +54,12 @@ class ProcessDiaryConfigurable : BoundConfigurable("Process Diary") {
                     checkBox(PD.msg("settings.alert.mem")).bindSelected({ o.alertMem }, { o.alertMem = it }).widthGroup("alertLabel")
                     comboBox(pcts).bindItem({ pct(o.alertMemPct) }, { o.alertMemPct = it?.value ?: 90 })
                 }
+                val gcPcts = ProcessDiarySettings.GC_PCTS.map { Choice(it, "$it%") }
+                row {
+                    checkBox(PD.msg("settings.alert.gc")).bindSelected({ o.alertGc }, { o.alertGc = it }).widthGroup("alertLabel")
+                        .comment(PD.msg("settings.alert.gc.comment"))
+                    comboBox(gcPcts).bindItem({ gcPcts.firstOrNull { it.value == o.alertGcPct } ?: gcPcts[1] }, { o.alertGcPct = it?.value ?: 25 })
+                }
                 val secs = ProcessDiarySettings.ALERT_SECS.map { Choice(it, if (it % 60 == 0) PD.msg("alert.minutes", it / 60) else PD.msg("alert.seconds", it)) }
                 row(PD.msg("settings.alert.duration")) {
                     comboBox(secs).bindItem({ secs.firstOrNull { it.value == o.alertSec } ?: secs[1] }, { o.alertSec = it?.value ?: 60 })

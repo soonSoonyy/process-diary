@@ -39,6 +39,9 @@ class ProcessDiarySettings : SimplePersistentStateComponent<ProcessDiarySettings
         var alertCpuPct by property(90)
         var alertMem by property(true)
         var alertMemPct by property(90)
+        /** Java 프로세스가 GC 에 쓰는 시간 비율 경고 */
+        var alertGc by property(true)
+        var alertGcPct by property(25)
         /** 이 시간(초) 넘게 계속되면 경고 */
         var alertSec by property(60)
         /** docker 실행 파일 경로 (비우면 자동으로 찾음) */
@@ -49,6 +52,7 @@ class ProcessDiarySettings : SimplePersistentStateComponent<ProcessDiarySettings
         val INTERVALS = listOf(1, 2, 5)
         val ALERT_PCTS = listOf(80, 85, 90, 95)
         val ALERT_SECS = listOf(30, 60, 120, 300)
+        val GC_PCTS = listOf(10, 25, 50)
         fun get(): ProcessDiarySettings = service()
     }
 

@@ -83,6 +83,16 @@ GitHub Actions에서 **Ubuntu · macOS · Windows** 세 OS 모두 빌드와 테�
 
 ![Java 프로세스](docs/screenshots/java-process.png)
 
+**자세한 Java 모니터링**: 상세 패널에서
+- **힙 그래프**(사용 / 확보, 최대값)와 **GC 시간 그래프**(최근 2분 동안 GC로 멈춘 시간 비율)
+- GC 횟수(young · full · 동시 처리)와 멈춘 시간 합계, 마지막 GC 원인, 메타스페이스, 스레드 수(데몬·최대), 불러온 클래스 수, Java 버전 · VM · GC 종류
+- **스레드 덤프**: 편집기 탭으로 열림 · **힙 덤프**: 확인 후 다운로드 폴더에 `.hprof` 저장 · **GC 실행**: 힙이 얼마나 줄었는지 알림 (jcmd 사용, 대상 JDK에 없으면 IDE에 들어 있는 것을 사용)
+- 보기 범위에 **Java 프로세스**: Java만 모아 보기
+- **GC 경고**: Java 프로세스가 GC에 시간을 너무 많이 쓰면(기본 25%) 알림. 대개 힙 메모리가 모자라다는 신호입니다. 도구 창을 닫아 두어도 동작합니다.
+
+![Java 모니터링](docs/screenshots/java-monitoring.png)
+![GC 경고](docs/screenshots/gc-alert.png)
+
 ### 컨테이너 탭 (Docker, 1.3.0)
 - 컨테이너 목록, 상태, **게시 포트**, CPU, 메모리, compose 프로젝트
 - 우클릭: 정지 · 시작 · 재시작 · 삭제(멈춘 것만, 확인 후), 브라우저에서 포트 열기, 이름·ID·`docker logs` 명령 복사

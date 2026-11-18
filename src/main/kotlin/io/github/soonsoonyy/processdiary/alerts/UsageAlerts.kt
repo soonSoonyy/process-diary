@@ -51,9 +51,37 @@ class UsageAlerts {
     private val cpu = Threshold()
     private val mem = Threshold()
 
+    private val gc = HashMap<Int, Threshold>()
+
     val watching: Boolean get() = cpu.watching || mem.watching
 
-    fun enabled(): Boolean = ProcessDiarySettings.get().state.let { it.alertCpu || it.alertMem }
+    fun enabled(): Boolean = ProcessDiarySettings.get().state.let { it.alertCpu || it.alertMem || it.alertGc }
+
+    fun gcEnabled(): Boolean = ProcessDiarySettings.get().state.alertGc
+
+    /**
+     * Java 프로세스가 최근 [ProcessDiarySettings.Options.alertSec] 동안 GC 로 멈춘 시간이 기준 이상이면 알림.
+     * GC 에 시간을 많이 쓰면 대부분 메모리(힙)가 모자란 상태다.
+     */
+    fun checkGc(now: Long, pids: List<Int>, gcPercent: (Int, Long) -> Double?, label: (Int) -> String?) {
+        val o = ProcessDiarySettings.get().state
+        gc.keys.retainAll(pids.toSet())
+        for (pid in pids) {
+            val pct = gcPercent(pid, o.alertSec * 1000L) ?: continue
+            // 값 자체가 기간 평균이므로 넘는 즉시 알림 (지속 시간 0)
+            if (gc.getOrPut(pid) { Threshold() }.update(now, pct, o.alertGc, o.alertGcPct, 0)) {
+                val name = label(pid) ?: "java"
+                // GC 문제는 먼저 살펴봐야 하므로 [종료] 버튼은 넣지 않음
+                notify(
+                    PD.msg("alert.gc.title", StringUtil.escapeXmlEntities(name), pct.toInt()),
+                    PD.msg("alert.gc.body", duration(o.alertSec), pid),
+                    emptyList(),
+                    null,
+                    showPid = pid,
+                )
+            }
+        }
+    }
 
     fun check(sys: SystemStats, procs: List<ProcInfo>, cores: Int) {
         val o = ProcessDiarySettings.get().state
@@ -81,7 +109,7 @@ class UsageAlerts {
 
     private fun duration(sec: Int) = if (sec % 60 == 0) PD.msg("alert.minutes", sec / 60) else PD.msg("alert.seconds", sec)
 
-    private fun notify(title: String, body: String, lines: List<String>, top: ProcInfo?) {
+    private fun notify(title: String, body: String, lines: List<String>, top: ProcInfo?, showPid: Int? = top?.pid) {
         val text = body + if (lines.isEmpty()) "" else "<br>" + lines.joinToString("<br>")
         val n = NotificationGroupManager.getInstance().getNotificationGroup("Process Diary")
             .createNotification(title, text, NotificationType.WARNING)
@@ -90,9 +118,9 @@ class UsageAlerts {
                 ProcessActions.kill(activeProject(), listOf(top), force = false)
             })
         }
-        if (top != null) {
+        if (showPid != null) {
             n.addAction(NotificationAction.createSimple(PD.msg("notify.showInToolWindow")) {
-                activeProject()?.let { ProcessToolWindowFactory.showPid(it, top.pid) }
+                activeProject()?.let { ProcessToolWindowFactory.showPid(it, showPid) }
             })
         }
         n.addAction(NotificationAction.createSimple(PD.msg("alert.settings")) {

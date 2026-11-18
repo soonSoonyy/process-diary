@@ -11,6 +11,8 @@ import com.intellij.util.concurrency.AppExecutorUtil
 import io.github.soonsoonyy.processdiary.alerts.UsageAlerts
 import io.github.soonsoonyy.processdiary.data.Collector
 import io.github.soonsoonyy.processdiary.data.Docker
+import io.github.soonsoonyy.processdiary.data.Jvm
+import io.github.soonsoonyy.processdiary.data.JvmStats
 import io.github.soonsoonyy.processdiary.model.ProcDetail
 import io.github.soonsoonyy.processdiary.model.ProcInfo
 import io.github.soonsoonyy.processdiary.model.SystemStats
@@ -46,8 +48,14 @@ class ProcessDiaryService : Disposable {
     val history = ArrayDeque<SystemStats>()
     var processes: List<ProcInfo> = emptyList(); private set
     var byPid: Map<Int, ProcInfo> = emptyMap(); private set
+    /** 프로세스 목록을 마지막으로 수집한 시각 */
+    @Volatile var processesAt = 0L; private set
     val cpuHistory = HashMap<Int, ArrayDeque<Double>>()
     val memHistory = HashMap<Int, ArrayDeque<Double>>()
+    /** Java 프로세스별 최근 성능 값 (힙·GC 그래프, GC 경고) */
+    val jvmHistory = HashMap<Int, ArrayDeque<JvmStats>>()
+    /** Java 프로세스 짧은 이름 (경고 알림용) */
+    val jvmLabels = HashMap<Int, String>()
     @Volatile var error: String? = null; private set
     val cores: Int get() = collector?.cores ?: Runtime.getRuntime().availableProcessors()
     val latest: SystemStats? get() = history.lastOrNull()
@@ -88,7 +96,9 @@ class ProcessDiaryService : Disposable {
             val sys = c.system()
             // 경고 기준을 넘은 동안에는 "가장 많이 쓰는 프로세스"를 알려주기 위해 목록도 수집
             val procs = if (alerts.watching || subscribers.any { it.needsProcesses() }) c.processes(sys.memTotal) else null
-            ApplicationManager.getApplication().invokeLater({ apply(sys, procs) }, ModalityState.any())
+            // JVM 성능 정보 파일만 읽으므로 가벼움 (도구 창을 닫아도 GC 경고가 동작하도록)
+            val jvms = if (procs != null || alerts.gcEnabled()) sampleJvms() else null
+            ApplicationManager.getApplication().invokeLater({ apply(sys, procs, jvms) }, ModalityState.any())
         } catch (e: Throwable) {
             LOG.warn(e)
         } finally {
@@ -96,11 +106,35 @@ class ProcessDiaryService : Disposable {
         }
     }
 
-    private fun apply(sys: SystemStats, procs: List<ProcInfo>?) {
+    private class JvmSample(val stats: JvmStats, val label: String?)
+
+    private fun sampleJvms(): Map<Int, JvmSample> = try {
+        Jvm.pids().mapNotNull { pid -> Jvm.readPerf(pid)?.let { pid to JvmSample(it.stats(), Jvm.labelOf(it)) } }.toMap()
+    } catch (e: Throwable) { LOG.debug(e); emptyMap() }
+
+    /** 최근 [windowMs] 동안 GC 로 멈춘 시간 비율(%) (자료가 10초 미만이면 null) */
+    fun gcPercent(pid: Int, windowMs: Long = Long.MAX_VALUE): Double? {
+        val h = jvmHistory[pid] ?: return null
+        val last = h.lastOrNull() ?: return null
+        if (last.frequency <= 0) return null
+        val first = h.firstOrNull { (last.ticks - it.ticks) * 1000 / last.frequency <= windowMs } ?: return null
+        val span = last.ticks - first.ticks
+        if (span * 1000 / last.frequency < 10_000) return null
+        return ((last.gcTicks - first.gcTicks).coerceAtLeast(0) * 100.0 / span).coerceIn(0.0, 100.0)
+    }
+
+    /** 샘플 사이마다의 GC 시간 비율(%) (그래프용) */
+    fun gcSeries(pid: Int): List<Double> {
+        val h = jvmHistory[pid]?.toList() ?: return emptyList()
+        return h.zipWithNext { a, b -> if (b.ticks > a.ticks) ((b.gcTicks - a.gcTicks).coerceAtLeast(0) * 100.0 / (b.ticks - a.ticks)).coerceIn(0.0, 100.0) else 0.0 }
+    }
+
+    private fun apply(sys: SystemStats, procs: List<ProcInfo>?, jvms: Map<Int, JvmSample>? = null) {
         history.addLast(sys)
         while (history.size > HISTORY) history.removeFirst()
         if (procs != null) {
             processes = procs
+            processesAt = sys.time
             byPid = procs.associateBy { it.pid }
             for (p in procs) {
                 cpuHistory.getOrPut(p.pid) { ArrayDeque() }.also { it.addLast(p.cpu); if (it.size > HISTORY) it.removeFirst() }
@@ -109,10 +143,19 @@ class ProcessDiaryService : Disposable {
             cpuHistory.keys.retainAll(byPid.keys)
             memHistory.keys.retainAll(byPid.keys)
         }
+        if (jvms != null) {
+            for ((pid, j) in jvms) {
+                jvmHistory.getOrPut(pid) { ArrayDeque() }.also { it.addLast(j.stats); if (it.size > HISTORY) it.removeFirst() }
+                j.label?.let { jvmLabels[pid] = it }
+            }
+            jvmHistory.keys.retainAll(jvms.keys)
+            jvmLabels.keys.retainAll(jvms.keys)
+        }
         for (s in subscribers) {
             try { s.onUpdate() } catch (e: Throwable) { LOG.warn(e) }
         }
         try { alerts.check(sys, if (procs != null) processes else emptyList(), cores) } catch (e: Throwable) { LOG.warn(e) }
+        if (jvms != null) try { alerts.checkGc(sys.time, jvmHistory.keys.toList(), ::gcPercent) { jvmLabels[it] } } catch (e: Throwable) { LOG.warn(e) }
     }
 
     /** 포트를 쓰는 프로세스 PID (백그라운드 스레드에서 호출) */

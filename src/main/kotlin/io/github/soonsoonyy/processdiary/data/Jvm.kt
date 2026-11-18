@@ -23,7 +23,36 @@ data class JvmInfo(
     /** 힙 사용량/확보량 (바이트, 모르면 -1) */
     val heapUsed: Long = -1,
     val heapCommitted: Long = -1,
+    /** 성능 정보 파일에서 읽은 자세한 값 (없으면 null) */
+    val stats: JvmStats? = null,
 )
+
+/** JVM 이 성능 정보로 공개하는 값 한 시점 (모르는 값은 -1) */
+data class JvmStats(
+    val heapUsed: Long,
+    val heapCommitted: Long,
+    val heapMax: Long,
+    val metaspaceUsed: Long,
+    val threads: Long,
+    val daemonThreads: Long,
+    val peakThreads: Long,
+    val classes: Long,
+    /** 젊은 세대 GC / 전체(Full) GC / 그 밖의 GC 일시정지 횟수 */
+    val youngGc: Long,
+    val fullGc: Long,
+    val otherGc: Long,
+    /** GC 로 멈춘 시간 누적 (JVM 시계 단위) */
+    val gcTicks: Long,
+    /** JVM 시계 현재값과 초당 눈금 수 */
+    val ticks: Long,
+    val frequency: Long,
+    val gcName: String,
+    val lastGcCause: String,
+    val vmName: String,
+) {
+    val gcCount: Long get() = listOf(youngGc, fullGc, otherGc).filter { it >= 0 }.sum()
+    val gcTimeMs: Long get() = if (frequency > 0) gcTicks * 1000 / frequency else -1
+}
 
 object Jvm {
     private class Cached(val startTime: Long, val info: JvmInfo?)
@@ -49,7 +78,7 @@ object Jvm {
             made
         } ?: return null
         if (perf == null) return base
-        return base.copy(heapUsed = perf.heapUsed, heapCommitted = perf.heapCommitted)
+        return base.copy(heapUsed = perf.heapUsed, heapCommitted = perf.heapCommitted, stats = perf.stats())
     }
 
     /** 끝난 프로세스는 캐시에서 제거 */
@@ -88,7 +117,7 @@ object Jvm {
         }
         if (main.startsWith("org.springframework.boot.loader.")) return JvmInfo(main, "Spring Boot", "spring", javaVersion)
         val simple = main.substringAfterLast('/').substringAfterLast('.').ifEmpty { main }
-        val spring = "spring-boot" in classPath || simple.endsWith("Application")
+        val spring = "spring-boot" in classPath || "springframework" in classPath
         return JvmInfo(main, simple, if (spring) "spring" else "app", javaVersion)
     }
 
@@ -120,7 +149,46 @@ object Jvm {
     }
 
     // ---------------------------------------------------------------- hsperfdata 읽기
-    class Perf(val strings: Map<String, String>, val heapUsed: Long, val heapCommitted: Long)
+    class Perf(val strings: Map<String, String>, val heapUsed: Long, val heapCommitted: Long, val longs: Map<String, Long> = emptyMap()) {
+        private fun l(k: String) = longs[k] ?: -1L
+
+        /** 자세한 값으로 정리 */
+        fun stats(): JvmStats {
+            val genMax = longs.filterKeys { genMaxKey.matches(it) }.values
+            // G1 등은 세대마다 "최대 = 힙 전체"로 같은 값을 보고하고, Parallel/Serial 은 세대별로 나눠 보고함
+            val heapMax = when {
+                genMax.isEmpty() -> -1
+                genMax.distinct().size == 1 && genMax.size > 1 -> genMax.first()
+                else -> genMax.sum()
+            }
+            val collectors = longs.keys.mapNotNull { collectorKey.find(it)?.groupValues?.get(1)?.toInt() }.distinct().sorted()
+            fun inv(i: Int) = l("sun.gc.collector.$i.invocations")
+            return JvmStats(
+                heapUsed = heapUsed, heapCommitted = heapCommitted, heapMax = heapMax,
+                metaspaceUsed = l("sun.gc.metaspace.used"),
+                threads = l("java.threads.live"), daemonThreads = l("java.threads.daemon"), peakThreads = l("java.threads.livePeak"),
+                // 공유 아카이브(CDS)에서 불러온 클래스는 따로 셈
+                classes = if (l("java.cls.loadedClasses") < 0) -1 else
+                    l("java.cls.loadedClasses") + maxOf(0, l("java.cls.sharedLoadedClasses")) - maxOf(0, l("java.cls.unloadedClasses")) - maxOf(0, l("java.cls.sharedUnloadedClasses")),
+                youngGc = inv(0), fullGc = inv(1), otherGc = collectors.filter { it >= 2 }.sumOf { maxOf(0, inv(it)) },
+                gcTicks = collectors.sumOf { maxOf(0, l("sun.gc.collector.$it.time")) },
+                ticks = l("sun.os.hrt.ticks"), frequency = l("sun.os.hrt.frequency"),
+                gcName = strings["sun.gc.policy.name"].orEmpty(), lastGcCause = strings["sun.gc.lastCause"].orEmpty(),
+                vmName = strings["java.property.java.vm.name"].orEmpty(),
+            )
+        }
+    }
+
+    private val genMaxKey = Regex("^sun\\.gc\\.generation\\.\\d+\\.maxCapacity$")
+    private val collectorKey = Regex("^sun\\.gc\\.collector\\.(\\d+)\\.time$")
+    private val longPrefixes = listOf("sun.gc.", "java.threads.", "java.cls.", "sun.os.hrt.")
+
+    /** 이 사용자의 JVM 들 (성능 정보 파일이 있는 PID). 같은 사용자 프로세스만 */
+    fun pids(): List<Int> = perfDirs.flatMap { d -> d.list()?.mapNotNull { it.toIntOrNull() } ?: emptyList() }.distinct()
+        .filter { ProcessHandle.of(it.toLong()).map { h -> h.isAlive }.orElse(false) }
+
+    /** perf 정보만으로 짧은 이름 (경고 알림용) */
+    fun labelOf(perf: Perf): String? = perf.strings["sun.rt.javaCommand"]?.let(::mainFromJavaCommand)?.let { describe(it).label }
 
     private val perfDirs: List<File> by lazy {
         val user = System.getProperty("user.name") ?: ""
@@ -152,7 +220,8 @@ object Jvm {
 
     private val usedKey = Regex("^sun\\.gc\\.generation\\.\\d+\\.space\\.\\d+\\.used$")
     private val capacityKey = Regex("^sun\\.gc\\.generation\\.\\d+\\.capacity$")
-    private val wantedStrings = setOf("sun.rt.javaCommand", "java.property.java.version", "java.property.java.class.path")
+    private val wantedStrings = setOf("sun.rt.javaCommand", "java.property.java.version", "java.property.java.class.path",
+        "sun.gc.policy.name", "sun.gc.lastCause", "java.property.java.vm.name")
 
     /** PerfData 형식 (버전 2): 앞부분(prologue) 뒤에 이름-값 항목이 이어진다 */
     fun parsePerf(b: ByteArray): Perf? {
@@ -163,6 +232,7 @@ object Jvm {
         val entryOffset = bb.getInt(24)
         val count = bb.getInt(28)
         val strings = HashMap<String, String>()
+        val longs = HashMap<String, Long>()
         var used = 0L
         var committed = 0L
         var hasHeap = false
@@ -177,6 +247,7 @@ object Jvm {
             val dataOff = bb.getInt(off + 16)
             val name = cString(b, off + nameOff, off + len)
             if (type == 'J' && vecLen == 0 && off + dataOff + 8 <= b.size) {
+                if (longPrefixes.any { name.startsWith(it) }) longs[name] = bb.getLong(off + dataOff)
                 when {
                     usedKey.matches(name) -> { used += bb.getLong(off + dataOff); hasHeap = true }
                     capacityKey.matches(name) -> committed += bb.getLong(off + dataOff)
@@ -186,7 +257,7 @@ object Jvm {
             }
             off += len
         }
-        return Perf(strings, if (hasHeap) used else -1, if (hasHeap) committed else -1)
+        return Perf(strings, if (hasHeap) used else -1, if (hasHeap) committed else -1, longs)
     }
 
     private fun cString(b: ByteArray, from: Int, limit: Int): String {

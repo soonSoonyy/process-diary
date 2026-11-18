@@ -1,5 +1,6 @@
 package io.github.soonsoonyy.processdiary
 
+import io.github.soonsoonyy.processdiary.data.JavaTools
 import io.github.soonsoonyy.processdiary.data.Jvm
 import junit.framework.TestCase
 import java.io.File
@@ -20,7 +21,8 @@ class JvmTest : TestCase() {
         assertEquals("Kotlin Daemon", Jvm.describe("org.jetbrains.kotlin.daemon.KotlinCompileDaemon").label)
         assertEquals("shop-0.1.jar", Jvm.describe("build/libs/shop-0.1.jar").label)
         assertEquals("jar", Jvm.describe("C:\\apps\\shop.jar").kind)
-        Jvm.describe("com.example.shop.ShopApplication").let { assertEquals("ShopApplication", it.label); assertEquals("spring", it.kind) }
+        Jvm.describe("com.example.shop.ShopApplication", classPath = "/m2/spring-boot-3.3.jar").let { assertEquals("ShopApplication", it.label); assertEquals("spring", it.kind) }
+        assertEquals("not Spring without Spring on the class path", "app", Jvm.describe("com.example.shop.ShopApplication").kind)
         Jvm.describe("com.example.Tool").let { assertEquals("Tool", it.label); assertEquals("app", it.kind) }
         assertTrue(Jvm.isJava("java")); assertTrue(Jvm.isJava("javaw.exe")); assertFalse(Jvm.isJava("javac"))
     }
@@ -56,6 +58,34 @@ class JvmTest : TestCase() {
             assertEquals("SleepyMain", info.label)
             assertEquals(SleepyMain::class.java.name, info.main)
             assertTrue("child heap ${info.heapUsed}: " + Jvm.perfDiagnostics(pid), info.heapUsed > 0)
+
+            // 자세한 값
+            val st = info.stats!!
+            assertTrue("threads ${st.threads}", st.threads > 0)
+            assertTrue("classes ${st.classes} (shared archive classes included)", st.classes > 300)
+            assertTrue("heap max ${st.heapMax} >= committed ${st.heapCommitted}", st.heapMax >= st.heapCommitted && st.heapMax <= 80L shl 20)
+            assertTrue("metaspace", st.metaspaceUsed > 0)
+            assertTrue("clock", st.ticks > 0 && st.frequency > 0)
+            assertTrue("gc name", st.gcName.isNotEmpty())
+
+            // jcmd: 스레드 덤프 / GC / 힙 덤프
+            val dump = JavaTools.threadDump(pid, ChildJava.javaBin)
+            assertTrue("thread dump: ${dump.output.take(300)}", dump.ok && dump.output.contains("SleepyMain"))
+            assertFalse("no JAVA_TOOL_OPTIONS noise", dump.output.contains("Picked up "))
+            assertFalse("no pid line", dump.output.lineSequence().first().trim() == "$pid:")
+            val gcBefore = Jvm.readPerf(pid)!!.stats().gcCount
+            val gc = JavaTools.runGc(pid, ChildJava.javaBin)
+            assertTrue("gc: ${gc.output}", gc.ok)
+            assertTrue("gc count increased", Jvm.readPerf(pid)!!.stats().gcCount > gcBefore)
+            val hprof = File.createTempFile("pd-test", ".hprof").also { it.delete() }
+            try {
+                val hd = JavaTools.heapDump(pid, ChildJava.javaBin, hprof)
+                assertTrue("heap dump: ${hd.output}", hd.ok && hprof.length() > 1000)
+            } finally {
+                hprof.delete()
+            }
+            assertTrue("listed as a JVM of this user", pid in Jvm.pids())
+            assertFalse("unknown pid", JavaTools.threadDump(999_999, ChildJava.javaBin).ok)
 
             // 성능 정보 파일 없이 실행 명령만으로도
             Jvm.retain(emptySet())

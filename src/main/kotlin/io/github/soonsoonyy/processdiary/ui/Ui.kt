@@ -62,6 +62,9 @@ object Fmt {
 
     fun bytes(b: Long) = bytes(b.toDouble())
 
+    /** 1 MB 미만은 KB 로 (메타스페이스처럼 작은 값) */
+    fun memFine(b: Long): String = if (b in 0 until (1L shl 20)) "${b / 1024} KB" else mem(b)
+
     fun mem(b: Long): String = if (b >= 1L shl 30) "%.1f GB".format(b / (1L shl 30).toDouble()) else "${b / (1L shl 20)} MB"
 
     fun shortPath(p: String): String = if (p.isNotEmpty() && (p == home || p.startsWith("$home/") || p.startsWith("$home\\"))) "~" + p.substring(home.length) else p

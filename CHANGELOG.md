@@ -5,6 +5,9 @@
 
 ## [1.3.0]
 - Java processes show what they run: main class or jar (e.g. "Gradle Daemon", "ShopApplication", "app.jar"), Java heap usage and Java version
+- Java monitoring: heap graph (used / reserved / max), GC time graph, GC count and pause time, metaspace, threads, loaded classes; "Java processes" scope
+- Java actions: thread dump (opens in an editor tab), heap dump (.hprof, after a confirmation) and Run GC, using jcmd
+- GC alert: notify when a Java process spends too much time in GC (default 25% over the alert period), even with the tool window closed
 - Containers tab: Docker containers with published ports, CPU and memory; start, stop, restart, remove; "This project only" for docker compose
 - Port conflicts caused by a Docker container now offer "Stop container and rerun" instead of stopping Docker's port forwarder
 - Usage alerts: notify when CPU or memory stays above a limit (default 90% for 1 minute), with the top processes and a Stop button
@@ -13,6 +16,9 @@
 - 이 프로젝트에서 남겨진 프로세스나 compose 컨테이너 때문에 생긴 포트 충돌은 묻지 않고 자동으로 정리 후 다시 실행 (설정에서 끌 수 있음)
 - 윈도우: 작업 폴더 표시, Java 힙 표시, "종료"는 먼저 닫기 요청 후 강제 종료
 - Java 프로세스에 실행 중인 메인 클래스/jar 이름, 힙 사용량, Java 버전 표시
+- Java 모니터링: 힙 그래프(사용/확보/최대), GC 시간 그래프, GC 횟수·멈춘 시간, 메타스페이스, 스레드, 클래스 수, "Java 프로세스" 보기
+- Java 동작: 스레드 덤프(편집기 탭으로 열림), 힙 덤프(.hprof, 확인 후), GC 실행
+- GC 경고: Java 프로세스가 GC에 시간을 너무 많이 쓰면 알림 (기본 25%), 도구 창을 닫아도 동작
 - 컨테이너 탭: Docker 컨테이너 목록, 게시 포트, 시작·정지·재시작·삭제
 - Docker 컨테이너 때문에 생긴 포트 충돌은 "컨테이너 정지 후 다시 실행"으로 해결
 - 사용량 경고: CPU나 메모리가 기준(기본 90%, 1분)을 계속 넘으면 알림

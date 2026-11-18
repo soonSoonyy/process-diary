@@ -53,7 +53,7 @@ import javax.swing.event.DocumentEvent
 /** 도구 창 "Process Diary"의 전체 화면 */
 class ProcessPanel(private val project: Project) : JPanel(BorderLayout()), Disposable {
     enum class Scope {
-        MINE, PROJECT, ALL, PORTS, BUSY;
+        MINE, PROJECT, JAVA, ALL, PORTS, BUSY;
         val label: String get() = PD.msg("scope.${name.lowercase()}")
         override fun toString() = label // 콤보 상자 표시용 (저장은 name 으로)
     }
@@ -83,7 +83,8 @@ class ProcessPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
         toolTipText = PD.msg("toolbar.cleanup.tooltip")
     }
     private var cleanupTargets: List<ProcInfo> = emptyList()
-    private val pending = ArrayList<() -> Unit>()
+    /** 새 목록이 들어오면 실행할 동작 (요청 시각 이후에 수집된 목록이어야 함) */
+    private val pending = ArrayList<Pair<Long, () -> Unit>>()
     private val countLabel = JBLabel().apply { foreground = UIUtil.getContextHelpForeground() }
     private val charts = SystemCharts()
     private val chartsRow = JPanel(GridLayout(1, 4, JBUI.scale(14), 0)).apply {
@@ -93,7 +94,13 @@ class ProcessPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
     private val model: ProcessTableModel = ProcessTableModel { updateActionBar(); table.repaint() }
     val table: JBTable = JBTable(model)
     private val actionBar = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(8), JBUI.scale(3)))
-    private val detailPanel = DetailPanel({ select(it) }, { searchCwd(it) }, { p, force -> ProcessActions.kill(project, listOf(p), force) })
+    private val detailPanel = DetailPanel({ select(it) }, { searchCwd(it) }, { p, force -> ProcessActions.kill(project, listOf(p), force) }) { p, what ->
+        when (what) {
+            "threadDump" -> JavaActions.threadDump(project, p)
+            "heapDump" -> JavaActions.heapDump(project, p)
+            "gc" -> JavaActions.runGc(project, p)
+        }
+    }
 
     private var sortCol = Col.CPU
     private var sortDesc = true
@@ -266,12 +273,18 @@ class ProcessPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
         if (rank.isEmpty() || liveBox.isSelected) resort()
         rebuild()
         if (++tick % 2 == 0) loadDetail() else renderDetail()
-        if (pending.isNotEmpty()) { val p = pending.toList(); pending.clear(); p.forEach { it() } }
+        if (pending.isNotEmpty()) {
+            val ready = pending.filter { it.first <= service.processesAt }
+            pending.removeAll(ready.toSet())
+            ready.forEach { it.second() }
+        }
     }
 
     /** 프로세스 목록이 준비되면 실행 (알림에서 "Process Diary에서 보기"를 눌렀을 때 사용) */
     fun afterFirstData(action: () -> Unit) {
-        if (service.processes.isNotEmpty() && model.rows.isNotEmpty()) action() else { pending += action; service.requestNow() }
+        // 화면이 닫혀 있던 동안의 목록은 오래됐을 수 있으므로 (방금 뜬 프로세스가 없음) 새로 수집한 뒤 실행
+        pending += System.currentTimeMillis() to action
+        service.requestNow()
     }
 
     // ---------------------------------------------------------------- 정렬 (순서 고정)
@@ -309,6 +322,7 @@ class ProcessPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
     private fun inScope(p: ProcInfo): Boolean = when (scopeBox.selectedItem as Scope) {
         Scope.MINE -> p.user.substringAfterLast('\\').equals(me, ignoreCase = true)
         Scope.PROJECT -> projectPath != null && p.cwd.isNotEmpty() && (p.cwd == projectPath || p.cwd.startsWith("$projectPath/") || p.cwd.startsWith("$projectPath\\"))
+        Scope.JAVA -> p.jvm != null
         Scope.ALL -> true
         Scope.PORTS -> p.ports.isNotEmpty()
         Scope.BUSY -> p.cpu >= 1.0
