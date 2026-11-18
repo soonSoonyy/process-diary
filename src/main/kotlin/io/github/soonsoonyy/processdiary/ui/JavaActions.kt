@@ -5,7 +5,7 @@ import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.fileTypes.PlainTextFileType
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.Task
@@ -36,7 +36,7 @@ object JavaActions {
                     if (project.isDisposed) return@invokeLater
                     val file = LightVirtualFile("Thread dump - ${p.jvm?.label ?: p.name} ${p.pid} $time.txt", PlainTextFileType.INSTANCE, header + r.output)
                     file.isWritable = false
-                    FileEditorManager.getInstance(project).openFile(file, true)
+                    OpenFileDescriptor(project, file).navigate(true)
                 }
             }
         }.queue()
