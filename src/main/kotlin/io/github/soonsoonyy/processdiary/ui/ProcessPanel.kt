@@ -22,6 +22,7 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import io.github.soonsoonyy.processdiary.ProcessActions
 import io.github.soonsoonyy.processdiary.ProcessDiaryService
+import io.github.soonsoonyy.processdiary.runs.RunRegistry
 import io.github.soonsoonyy.processdiary.model.ProcDetail
 import io.github.soonsoonyy.processdiary.model.ProcInfo
 import io.github.soonsoonyy.processdiary.settings.ProcessDiarySettings
@@ -53,7 +54,7 @@ import javax.swing.event.DocumentEvent
 /** 도구 창 "Process Diary"의 전체 화면 */
 class ProcessPanel(private val project: Project) : JPanel(BorderLayout()), Disposable {
     enum class Scope {
-        MINE, PROJECT, JAVA, ALL, PORTS, BUSY;
+        MINE, PROJECT, RUNS, JAVA, ALL, PORTS, BUSY;
         val label: String get() = PD.msg("scope.${name.lowercase()}")
         override fun toString() = label // 콤보 상자 표시용 (저장은 name 으로)
     }
@@ -139,7 +140,7 @@ class ProcessPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
             tc.preferredWidth = JBUI.scale(c.width)
             if (c == Col.CHECK) { tc.maxWidth = JBUI.scale(c.width); tc.minWidth = JBUI.scale(c.width) }
         }
-        table.columnModel.getColumn(Col.NAME.ordinal).cellRenderer = NameRenderer { treeBox.isSelected }
+        table.columnModel.getColumn(Col.NAME.ordinal).cellRenderer = NameRenderer({ treeBox.isSelected }, ::runOf)
         table.columnModel.getColumn(Col.PID.ordinal).cellRenderer = TextRenderer(right = true, text = { it.p.pid.toString() })
         table.columnModel.getColumn(Col.CPU.ordinal).cellRenderer = BarRenderer(Palette.CPU, { it.p.cpu / 100.0 }, { "%.1f%%".format(it.p.cpu) })
         table.columnModel.getColumn(Col.MEM.ordinal).cellRenderer = BarRenderer(Palette.MEM, { it.p.memPct / 20.0 }, { Fmt.mem(it.p.rssBytes) })
@@ -252,6 +253,9 @@ class ProcessPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
         onUpdate()
     }
 
+    /** 이 프로세스를 띄운 IDE 실행 설정 이름 (없으면 null) */
+    private fun runOf(p: ProcInfo): String? = RunRegistry.find(p.pid, service.byPid)?.name
+
     private fun sep() = JSeparator(SwingConstants.VERTICAL).apply { preferredSize = JBUI.size(1, 20) }
 
     private fun bindKey(c: JComponent, ks: KeyStroke, name: String, action: () -> Unit) {
@@ -322,6 +326,7 @@ class ProcessPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
     private fun inScope(p: ProcInfo): Boolean = when (scopeBox.selectedItem as Scope) {
         Scope.MINE -> p.user.substringAfterLast('\\').equals(me, ignoreCase = true)
         Scope.PROJECT -> projectPath != null && p.cwd.isNotEmpty() && (p.cwd == projectPath || p.cwd.startsWith("$projectPath/") || p.cwd.startsWith("$projectPath\\"))
+        Scope.RUNS -> runOf(p) != null
         Scope.JAVA -> p.jvm != null
         Scope.ALL -> true
         Scope.PORTS -> p.ports.isNotEmpty()
@@ -333,7 +338,7 @@ class ProcessPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
         if (q.isEmpty()) return { true }
         val qx = if (q.startsWith("~")) home.lowercase() + q.substring(1) else q
         val qp = q.removePrefix(":")
-        val name = { p: ProcInfo -> p.name.lowercase().contains(q) || p.pid.toString() == q || p.jvm?.let { it.label.lowercase().contains(q) || it.main.lowercase().contains(q) } == true }
+        val name = { p: ProcInfo -> p.name.lowercase().contains(q) || p.pid.toString() == q || runOf(p)?.lowercase()?.contains(q) == true || p.jvm?.let { it.label.lowercase().contains(q) || it.main.lowercase().contains(q) } == true }
         val cwd = { p: ProcInfo -> p.cwd.isNotEmpty() && p.cwd.lowercase().contains(qx) }
         val port = { p: ProcInfo -> qp.all(Char::isDigit) && p.ports.any { it.toString().startsWith(qp) } }
         val path = { p: ProcInfo -> p.path.lowercase().contains(qx) }

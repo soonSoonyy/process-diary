@@ -29,13 +29,20 @@ object ProcessActions {
      * tree=true 이면 하위 프로세스도 함께 종료한다.
      */
     fun killNow(pids: List<Int>, force: Boolean, tree: Boolean, names: Map<Int, String> = emptyMap()): KillResult {
+        var done = 0
+        val failed = ArrayList<String>()
+        // IDE 의 Run 으로 띄운 프로세스는 IDE 를 통해 멈춤 (Run 창 상태가 맞고, IDE 가 하위 프로세스까지 정리함)
+        val viaIde = if (force) emptyList() else pids.mapNotNull { io.github.soonsoonyy.processdiary.runs.RunRegistry.root(it) }
+        for (e in viaIde) {
+            try { e.handler.destroyProcess(); done++ } catch (_: Exception) { failed += PD.msg("kill.fail.denied", e.name) }
+        }
+        val skip = viaIde.map { it.pid }.toSet()
         val order = LinkedHashSet<Int>()
         for (pid in pids) {
+            if (pid in skip) continue
             if (tree) order += descendantsOf(pid)
             order += pid
         }
-        var done = 0
-        val failed = ArrayList<String>()
         for (pid in order) {
             val name = names[pid] ?: ProcessHandle.of(pid.toLong()).flatMap { it.info().command() }.map { it.substringAfterLast('/').substringAfterLast('\\') }.orElse("PID $pid")
             if (isProtected(pid)) {

@@ -13,6 +13,7 @@ import com.intellij.util.ui.UIUtil
 import io.github.soonsoonyy.processdiary.ProcessActions
 import io.github.soonsoonyy.processdiary.ProcessDiaryService
 import io.github.soonsoonyy.processdiary.data.Describe
+import io.github.soonsoonyy.processdiary.runs.RunRegistry
 import io.github.soonsoonyy.processdiary.data.Docker
 import com.intellij.notification.NotificationType
 import com.intellij.util.concurrency.AppExecutorUtil
@@ -218,6 +219,10 @@ class DetailPanel(
             val ver = listOf(jvm.javaVersion, st?.vmName.orEmpty(), st?.gcName.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · ")
             if (ver.isNotEmpty()) kv(PD.msg("detail.java.version"), esc(ver))
         }
+        RunRegistry.find(p.pid, service.byPid)?.let { run ->
+            val what = if (run.pid == p.pid) PD.msg("detail.run.root") else PD.msg("detail.run.child", run.pid)
+            kv(PD.msg("detail.run"), "<b>${esc(run.name)}</b> <span style='color:$dim'>($what)</span> &nbsp;" + a("runwin:${run.pid}", PD.msg("detail.run.show")))
+        }
         kv(PD.msg("detail.uptime"), esc(Fmt.uptime(p.upTimeMs)))
         if (p.startTime > 0) kv(PD.msg("detail.started"), esc(SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date(p.startTime))))
         if (d != null) kv(PD.msg("detail.state"), esc(d.state))
@@ -275,6 +280,7 @@ class DetailPanel(
             d.startsWith("kill:") && p != null -> onKill(p, d == "kill:9")
             d.startsWith("copy:") -> ProcessActions.copy(d.substring(5), null)
             d.startsWith("java:") && p != null -> onJava(p, d.substring(5))
+            d.startsWith("runwin:") -> d.substring(7).toIntOrNull()?.let(RunRegistry::root)?.let { RunRegistry.showInRunWindow(it) }
             d.startsWith("dstop:") -> docker("stop", d.substring(6))
             d.startsWith("drestart:") -> docker("restart", d.substring(9))
         }

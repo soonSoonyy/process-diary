@@ -48,6 +48,7 @@ class RunWatcher(private val project: Project) : ExecutionListener {
     override fun processStarted(executorId: String, env: ExecutionEnvironment, handler: ProcessHandler) {
         val pid = pidOf(handler)
         tracked[handler] = Tracked(pid, System.currentTimeMillis())
+        if (pid != null) RunRegistry.add(RunRegistry.Entry(pid.toInt(), env.runProfile.name, project, handler, executorId, System.currentTimeMillis()))
         if (ProcessDiarySettings.get().state.watchPortConflicts) handler.addProcessListener(PortConflictListener(project, env, pid))
         ensureSampler()
     }
@@ -57,6 +58,7 @@ class RunWatcher(private val project: Project) : ExecutionListener {
     }
 
     override fun processTerminated(executorId: String, env: ExecutionEnvironment, handler: ProcessHandler, exitCode: Int) {
+        RunRegistry.remove(handler)
         val t = tracked.remove(handler) ?: return
         val name = env.runProfile.name
         // 종료 처리가 끝날 시간을 준 뒤 확인

@@ -68,7 +68,7 @@ class ProcessTableModel(private val onCheckChanged: () -> Unit) : AbstractTableM
 }
 
 /** 이름 칸: 들여쓰기 + 펼치기 화살표 + 카테고리 배지 + 이름 */
-class NameRenderer(private val tree: () -> Boolean) : ColoredTableCellRenderer() {
+class NameRenderer(private val tree: () -> Boolean, private val runOf: (ProcInfo) -> String? = { null }) : ColoredTableCellRenderer() {
     override fun customizeCellRenderer(table: JTable, value: Any?, selected: Boolean, hasFocus: Boolean, row: Int, column: Int) {
         val r = value as? Row ?: return
         val badge = BadgeIcon(r.p.category)
@@ -91,6 +91,8 @@ class NameRenderer(private val tree: () -> Boolean) : ColoredTableCellRenderer()
             append(jvm.label)
             append("  " + r.p.name, SimpleTextAttributes.GRAYED_ATTRIBUTES)
         } else append(r.p.name)
+        // IDE 의 Run 으로 띄운 것 (그 하위 프로세스 포함)
+        runOf(r.p)?.let { append("  ▶ $it", RUN_ATTRS) }
         if (tree() && r.children > 0) append("  (${r.children})", SimpleTextAttributes.GRAYED_ATTRIBUTES)
         toolTipText = (jvm?.main?.let { "$it\n" } ?: "") + r.p.path.ifEmpty { "" }
         if (toolTipText.isNullOrBlank()) toolTipText = null
@@ -98,6 +100,7 @@ class NameRenderer(private val tree: () -> Boolean) : ColoredTableCellRenderer()
 
     companion object {
         const val INDENT = 16
+        private val RUN_ATTRS = SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, Palette.NET_RX)
         /** 화살표 영역 클릭 판정 */
         fun arrowHit(r: Row, xInCell: Int): Boolean {
             val start = JBUI.scale(r.depth * INDENT)
