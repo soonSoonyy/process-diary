@@ -8,6 +8,10 @@
 - Containers tab: Docker containers with published ports, CPU and memory; start, stop, restart, remove; "This project only" for docker compose
 - Port conflicts caused by a Docker container now offer "Stop container and rerun" instead of stopping Docker's port forwarder
 - Usage alerts: notify when CPU or memory stays above a limit (default 90% for 1 minute), with the top processes and a Stop button
+- Port conflicts are handled automatically when the port is held by something clearly left over from this project (started by you, in this project folder, before this run, not running from the IDE); otherwise you are asked
+- Windows: working directory column, Java heap, and "Stop" asks the program to close before terminating it
+- 이 프로젝트에서 남겨진 프로세스나 compose 컨테이너 때문에 생긴 포트 충돌은 묻지 않고 자동으로 정리 후 다시 실행 (설정에서 끌 수 있음)
+- 윈도우: 작업 폴더 표시, Java 힙 표시, "종료"는 먼저 닫기 요청 후 강제 종료
 - Java 프로세스에 실행 중인 메인 클래스/jar 이름, 힙 사용량, Java 버전 표시
 - 컨테이너 탭: Docker 컨테이너 목록, 게시 포트, 시작·정지·재시작·삭제
 - Docker 컨테이너 때문에 생긴 포트 충돌은 "컨테이너 정지 후 다시 실행"으로 해결

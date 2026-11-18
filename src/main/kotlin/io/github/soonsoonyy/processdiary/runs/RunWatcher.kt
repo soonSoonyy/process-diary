@@ -134,6 +134,8 @@ class PortConflictListener(
     private val ownPid: Long?,
 ) : ProcessListener {
     private val reported = AtomicBoolean(false)
+    /** 이번 실행을 시작한 시각 (이보다 먼저 떠 있던 것만 "남겨진 것"으로 봄) */
+    private val startedAt = System.currentTimeMillis()
 
     override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) {
         if (reported.get()) return
@@ -152,6 +154,7 @@ class PortConflictListener(
         // (리눅스에서 userland-proxy 를 끈 경우엔 포트를 가진 프로세스가 보이지 않음)
         val dockerish = owners.isEmpty() || owners.any { pid -> byPid[pid]?.let { Docker.isDockerProcess(it.name) } == true }
         val containers = if (dockerish) try { Docker.containersOnPort(port) } catch (_: Throwable) { emptyList() } else emptyList()
+        if (tryAuto(port, owners, byPid, containers)) return
         if (containers.isNotEmpty()) { reportContainers(port, containers, owners.isNotEmpty()); return }
         if (owners.isEmpty()) { reported.set(false); return } // 확인 못 하면 조용히 넘어감
         val desc = owners.joinToString("<br>") { pid ->
@@ -175,6 +178,38 @@ class PortConflictListener(
         n.notify(project)
     }
 
+    /** 이 프로젝트에서 예전에 실행해 두고 잊은 것이 확실하면 묻지 않고 정리 후 다시 실행. 처리했으면 true */
+    private fun tryAuto(port: Int, owners: List<Int>, byPid: Map<Int, ProcInfo>, containers: List<Container>): Boolean {
+        if (!ProcessDiarySettings.get().state.autoResolvePorts) return false
+        val ideTree = ProcessHandle.current().descendants().map { it.pid().toInt() }.toList().toSet()
+        val d = AutoResolve.decide(owners.map { byPid[it] }, containers, project.basePath, System.getProperty("user.name") ?: "",
+            ideTree, ProcessActions::isProtected, startedAt)
+        if (d is AutoResolve.Decision.Ask) { LOG.info("port $port conflict: asking (${d.reason})"); return false }
+        // 다시 실행한 뒤에도 또 충돌하면 그때는 묻기
+        if (!AutoResolve.tryAcquire(project.locationHash + "|" + env.runProfile.name)) return false
+        when (d) {
+            is AutoResolve.Decision.Processes -> killAndMaybeRestart(port, d.targets.map { it.pid }, byPid, restart = true,
+                auto = d.targets.joinToString(", ") { "${it.displayName} (PID ${it.pid})" })
+            is AutoResolve.Decision.Containers -> stopContainers(port, d.targets, restart = true,
+                auto = d.targets.joinToString(", ") { PD.msg("conflict.auto.container", it.name) })
+            is AutoResolve.Decision.Ask -> return false
+        }
+        return true
+    }
+
+    /** 자동 처리 결과 알림 ([자동 처리 끄기] 포함) */
+    private fun notifyAuto(port: Int, what: String) {
+        NotificationGroupManager.getInstance().getNotificationGroup("Process Diary")
+            .createNotification(PD.msg("conflict.auto.title", port),
+                PD.msg("conflict.auto.body", StringUtil.escapeXmlEntities(what), StringUtil.escapeXmlEntities(env.runProfile.name)),
+                NotificationType.INFORMATION)
+            .addAction(NotificationAction.createSimpleExpiring(PD.msg("conflict.auto.turnOff")) {
+                ProcessDiarySettings.get().state.autoResolvePorts = false
+                ProcessActions.notify(project, PD.msg("conflict.auto.turnedOff"), NotificationType.INFORMATION)
+            })
+            .notify(project)
+    }
+
     private fun reportContainers(port: Int, containers: List<Container>, showInDiary: Boolean) {
         val runName = env.runProfile.name
         val desc = containers.joinToString("<br>") { c ->
@@ -188,7 +223,7 @@ class PortConflictListener(
         n.notify(project)
     }
 
-    private fun stopContainers(port: Int, containers: List<Container>, restart: Boolean) {
+    private fun stopContainers(port: Int, containers: List<Container>, restart: Boolean, auto: String? = null) {
         AppExecutorUtil.getAppExecutorService().execute {
             val errors = containers.mapNotNull { c -> Docker.command("stop", c.id)?.let { "${c.name}: $it" } }
             val free = ProcessActions.waitPortFree(port, 10_000)
@@ -199,14 +234,15 @@ class PortConflictListener(
             }
             if (restart) {
                 ApplicationManager.getApplication().invokeLater({ if (!project.isDisposed) ExecutionUtil.restart(env) }, project.disposed)
-                ProcessActions.notify(project, PD.msg("conflict.rerunning", port, StringUtil.escapeXmlEntities(env.runProfile.name)), NotificationType.INFORMATION)
+                if (auto != null) notifyAuto(port, auto)
+                else ProcessActions.notify(project, PD.msg("conflict.rerunning", port, StringUtil.escapeXmlEntities(env.runProfile.name)), NotificationType.INFORMATION)
             } else {
                 ProcessActions.notify(project, PD.msg("docker.stopped", containers.joinToString(", ") { StringUtil.escapeXmlEntities(it.name) }), NotificationType.INFORMATION)
             }
         }
     }
 
-    private fun killAndMaybeRestart(port: Int, owners: List<Int>, byPid: Map<Int, ProcInfo>, restart: Boolean) {
+    private fun killAndMaybeRestart(port: Int, owners: List<Int>, byPid: Map<Int, ProcInfo>, restart: Boolean, auto: String? = null) {
         AppExecutorUtil.getAppExecutorService().execute {
             val names = owners.associateWith { byPid[it]?.displayName ?: "PID $it" }
             var r = ProcessActions.killNow(owners, force = false, tree = true, names = names)
@@ -222,7 +258,8 @@ class PortConflictListener(
             }
             if (restart) {
                 ApplicationManager.getApplication().invokeLater({ if (!project.isDisposed) ExecutionUtil.restart(env) }, project.disposed)
-                ProcessActions.notify(project, PD.msg("conflict.rerunning", port, StringUtil.escapeXmlEntities(env.runProfile.name)), NotificationType.INFORMATION)
+                if (auto != null) notifyAuto(port, auto)
+                else ProcessActions.notify(project, PD.msg("conflict.rerunning", port, StringUtil.escapeXmlEntities(env.runProfile.name)), NotificationType.INFORMATION)
             } else {
                 ProcessActions.notifyResult(project, r)
             }
@@ -230,6 +267,6 @@ class PortConflictListener(
     }
 
     companion object {
-        @Suppress("unused") private val LOG = logger<PortConflictListener>()
+        private val LOG = logger<PortConflictListener>()
     }
 }

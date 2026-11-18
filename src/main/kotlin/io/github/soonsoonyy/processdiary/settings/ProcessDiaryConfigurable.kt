@@ -80,6 +80,13 @@ class ProcessDiaryConfigurable : BoundConfigurable("Process Diary") {
                     checkBox(PD.msg("settings.watch.ports"))
                         .bindSelected({ o.watchPortConflicts }, { o.watchPortConflicts = it })
                 }
+                indent {
+                    row {
+                        checkBox(PD.msg("settings.watch.auto"))
+                            .bindSelected({ o.autoResolvePorts }, { o.autoResolvePorts = it })
+                            .comment(PD.msg("settings.watch.auto.comment"))
+                    }
+                }
                 row {
                     checkBox(PD.msg("settings.watch.leftovers"))
                         .bindSelected({ o.watchLeftovers }, { o.watchLeftovers = it })

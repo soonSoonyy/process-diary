@@ -28,6 +28,8 @@ class ProcessDiarySettings : SimplePersistentStateComponent<ProcessDiarySettings
         var defaultScope by string("MINE")
         var watchPortConflicts by property(true)
         var watchLeftovers by property(true)
+        /** 포트 충돌이 이 프로젝트에서 남겨진 프로세스 때문이면 묻지 않고 정리 후 다시 실행 */
+        var autoResolvePorts by property(true)
         /** "자동 업데이트 켜기" 알림을 이미 보여줬는지 */
         var updatePrompted by property(false)
         /** 화면 언어: AUTO(IDE 언어) / KO / EN */
