@@ -1,12 +1,10 @@
 package io.github.soonsoonyy.processdiary.update
 
 import com.intellij.ide.BrowserUtil
-import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.diagnostic.ErrorReportSubmitter
 import com.intellij.openapi.diagnostic.IdeaLoggingEvent
 import com.intellij.openapi.diagnostic.SubmittedReportInfo
-import com.intellij.openapi.extensions.PluginId
 import com.intellij.util.Consumer
 import io.github.soonsoonyy.processdiary.PD
 import java.awt.Component
@@ -23,7 +21,7 @@ class GitHubErrorReporter : ErrorReportSubmitter() {
 
     override fun submit(events: Array<out IdeaLoggingEvent>, additionalInfo: String?, parentComponent: Component,
                         consumer: Consumer<in SubmittedReportInfo>): Boolean {
-        val version = PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID))?.version ?: "?"
+        val version = pluginDescriptor?.version ?: "?"
         val ide = ApplicationInfo.getInstance().let { "${it.fullApplicationName} (${it.build.asString()})" }
         val os = "${System.getProperty("os.name")} ${System.getProperty("os.version")} (${System.getProperty("os.arch")})"
         BrowserUtil.browse(issueUrl(events.map { it.throwableText ?: it.message.orEmpty() }, events.firstOrNull()?.message, additionalInfo, version, ide, os))

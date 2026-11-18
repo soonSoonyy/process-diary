@@ -65,10 +65,8 @@ class DiaryLog : SimplePersistentStateComponent<DiaryLog.Options>(Options()) {
 
     fun add(e: Entry) {
         synchronized(this) {
-            val list = state.entries
-            list += e.encode()
-            if (list.size > MAX) list.subList(0, list.size - MAX).clear()
-            state.intIncrementModificationCount()
+            // 목록을 새로 대입해야 변경으로 인식되어 저장됨
+            state.entries = (state.entries + e.encode()).takeLast(MAX).toMutableList()
         }
         listeners.forEach { try { it() } catch (_: Throwable) {} }
     }
@@ -77,7 +75,7 @@ class DiaryLog : SimplePersistentStateComponent<DiaryLog.Options>(Options()) {
     fun entries(): List<Entry> = synchronized(this) { state.entries.mapNotNull(Entry::decode) }.asReversed()
 
     fun clear() {
-        synchronized(this) { state.entries.clear(); state.intIncrementModificationCount() }
+        synchronized(this) { state.entries = mutableListOf() }
         listeners.forEach { try { it() } catch (_: Throwable) {} }
     }
 }
