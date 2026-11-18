@@ -41,5 +41,11 @@ class ProcessToolWindowFactory : ToolWindowFactory, DumbAware {
         dockerContent.setDisposer(containers)
         Disposer.register(toolWindow.disposable, containers)
         toolWindow.contentManager.addContent(dockerContent)
+
+        val diary = DiaryPanel(project)
+        val diaryContent = ContentFactory.getInstance().createContent(diary, PD.msg("tab.diary"), false)
+        diaryContent.setDisposer(diary)
+        Disposer.register(toolWindow.disposable, diary)
+        toolWindow.contentManager.addContent(diaryContent)
     }
 }

@@ -15,6 +15,7 @@ import io.github.soonsoonyy.processdiary.ProcessDiaryService
 import io.github.soonsoonyy.processdiary.data.Describe
 import io.github.soonsoonyy.processdiary.runs.RunRegistry
 import io.github.soonsoonyy.processdiary.data.Docker
+import io.github.soonsoonyy.processdiary.diary.DiaryLog
 import com.intellij.notification.NotificationType
 import com.intellij.util.concurrency.AppExecutorUtil
 import io.github.soonsoonyy.processdiary.model.ProcDetail
@@ -49,6 +50,8 @@ class DetailPanel(
     /** Java: 힙(사용/확보)과 GC 시간 비율 */
     private val heapChart = SparkChart(listOf(Palette.MEM, Palette.withAlpha(Palette.MEM, 110)), 64)
     private val gcChart = SparkChart(listOf(Palette.DISK_W), 64)
+    /** 힙 장기 추이 (GC 후 바닥값, 최근 6시간) */
+    private val trendChart = SparkChart(listOf(Palette.DISK_R), 64).apply { border = JBUI.Borders.emptyTop(6); isVisible = false }
     private val javaCharts = JPanel(GridLayout(1, 2, JBUI.scale(10), 0)).apply {
         isOpaque = false
         border = JBUI.Borders.emptyTop(6)
@@ -108,6 +111,7 @@ class DetailPanel(
         header.add(head)
         header.add(charts)
         header.add(javaCharts)
+        header.add(trendChart)
         html.border = JBUI.Borders.empty(0, 10, 6, 10)
         html.alignmentX = LEFT_ALIGNMENT
         header.alignmentX = LEFT_ALIGNMENT
@@ -131,6 +135,7 @@ class DetailPanel(
         cpuChart.isVisible = false
         memChart.isVisible = false
         javaCharts.isVisible = false
+        trendChart.isVisible = false
         setHtml("<p style='color:${hex(UIUtil.getContextHelpForeground())}'>${PD.msg("detail.empty.hint")}</p>")
     }
 
@@ -142,7 +147,7 @@ class DetailPanel(
                 title.icon = null
                 title.text = "PID $gonePid"
                 subtitle.text = PD.msg("detail.gone")
-                cpuChart.isVisible = false; memChart.isVisible = false; javaCharts.isVisible = false
+                cpuChart.isVisible = false; memChart.isVisible = false; javaCharts.isVisible = false; trendChart.isVisible = false
                 setHtml("")
             } else showEmpty()
             return
@@ -172,6 +177,22 @@ class DetailPanel(
             val recent = service.gcPercent(p.pid)
             gcChart.setData(listOf(gs), gmax, PD.msg("chart.gc"), recent?.let { "%.1f%%".format(it) } ?: "-",
                 PD.msg("chart.gc.sub", service.historyLabel()), "${gmax.toInt()}%")
+        }
+        val trend = service.heapTrends[p.pid]
+        trendChart.isVisible = javaCharts.isVisible && trend != null && trend.points.size >= 2
+        if (trendChart.isVisible && trend != null) {
+            val ys = trend.points.map { it.second.toDouble() }
+            val tmax = if ((st?.heapMax ?: 0) > 0) st!!.heapMax.toDouble() else Fmt.niceMax(ys.maxOrNull() ?: 0.0, 16.0 * 1048576)
+            val r = trend.analyze()
+            val slope = when {
+                r == null -> ""
+                r.r2 < 0.5 || kotlin.math.abs(r.bytesPerHour) < 4.0 * 1048576 -> PD.msg("chart.trend.steady")
+                r.bytesPerHour > 0 -> PD.msg("chart.trend.rising", Fmt.mem(r.bytesPerHour.toLong()))
+                else -> PD.msg("chart.trend.falling", Fmt.mem((-r.bytesPerHour).toLong()))
+            }
+            val span = Fmt.uptime((trend.points.last().first - trend.points.first().first) * 60_000)
+            trendChart.setData(listOf(ys), tmax, PD.msg("chart.trend"), slope.ifEmpty { Fmt.mem(trend.points.last().second) },
+                PD.msg("chart.trend.sub", span), Fmt.bytes(tmax))
         }
 
         val dim = hex(UIUtil.getContextHelpForeground())
@@ -318,6 +339,7 @@ class DetailPanel(
     private fun docker(verb: String, id: String) {
         AppExecutorUtil.getAppExecutorService().execute {
             val err = Docker.command(verb, id)
+            if (err == null) DiaryLog.add(DiaryLog.Kind.DOCKER, PD.msg("diary.docker", "docker $verb", id.take(12)))
             if (err != null) ProcessActions.notify(null, PD.msg("docker.failedAction") + "<br>" + StringUtil.escapeXmlEntities(err), NotificationType.ERROR)
             ProcessDiaryService.get().requestNow()
         }

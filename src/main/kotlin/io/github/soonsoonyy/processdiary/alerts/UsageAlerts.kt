@@ -9,6 +9,7 @@ import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.wm.IdeFocusManager
 import io.github.soonsoonyy.processdiary.PD
+import io.github.soonsoonyy.processdiary.diary.DiaryLog
 import io.github.soonsoonyy.processdiary.ProcessActions
 import io.github.soonsoonyy.processdiary.model.ProcInfo
 import io.github.soonsoonyy.processdiary.model.SystemStats
@@ -111,6 +112,7 @@ class UsageAlerts {
 
     private fun notify(title: String, body: String, lines: List<String>, top: ProcInfo?, showPid: Int? = top?.pid) {
         val text = body + if (lines.isEmpty()) "" else "<br>" + lines.joinToString("<br>")
+        DiaryLog.add(DiaryLog.Kind.ALERT, StringUtil.unescapeXmlEntities(title) + " · " + StringUtil.unescapeXmlEntities(StringUtil.stripHtml(text.replace("<br>", " · "), false)), pid = showPid ?: 0)
         val n = NotificationGroupManager.getInstance().getNotificationGroup("Process Diary")
             .createNotification(title, text, NotificationType.WARNING)
         if (top != null && !ProcessActions.isProtected(top.pid)) {

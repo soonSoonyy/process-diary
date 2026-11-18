@@ -13,6 +13,8 @@ import io.github.soonsoonyy.processdiary.data.Actuator
 import io.github.soonsoonyy.processdiary.data.Collector
 import io.github.soonsoonyy.processdiary.data.Docker
 import io.github.soonsoonyy.processdiary.data.Jvm
+import io.github.soonsoonyy.processdiary.diary.DiaryLog
+import io.github.soonsoonyy.processdiary.diary.HeapTrend
 import io.github.soonsoonyy.processdiary.data.JvmStats
 import io.github.soonsoonyy.processdiary.model.ProcDetail
 import io.github.soonsoonyy.processdiary.model.ProcInfo
@@ -57,6 +59,8 @@ class ProcessDiaryService : Disposable {
     val jvmHistory = HashMap<Int, ArrayDeque<JvmStats>>()
     /** Java 프로세스 짧은 이름 (경고 알림용) */
     val jvmLabels = HashMap<Int, String>()
+    /** Java 프로세스별 힙 장기 추이 (최대 6시간) */
+    val heapTrends = HashMap<Int, HeapTrend>()
     @Volatile var error: String? = null; private set
     val cores: Int get() = collector?.cores ?: Runtime.getRuntime().availableProcessors()
     val latest: SystemStats? get() = history.lastOrNull()
@@ -148,7 +152,16 @@ class ProcessDiaryService : Disposable {
             for ((pid, j) in jvms) {
                 jvmHistory.getOrPut(pid) { ArrayDeque() }.also { it.addLast(j.stats); if (it.size > HISTORY) it.removeFirst() }
                 j.label?.let { jvmLabels[pid] = it }
+                val trend = heapTrends.getOrPut(pid) { HeapTrend() }
+                trend.add(sys.time, j.stats.heapUsed)
+                // 누수 의심은 다이어리에 한 번만 기록
+                if (!trend.reported) trend.suspicious(j.stats.heapMax)?.let { r ->
+                    trend.reported = true
+                    DiaryLog.add(DiaryLog.Kind.TREND, PD.msg("diary.trend", (j.label ?: "java") + " (PID $pid)",
+                        io.github.soonsoonyy.processdiary.ui.Fmt.mem(r.bytesPerHour.toLong()), io.github.soonsoonyy.processdiary.ui.Fmt.uptime(r.minutes * 60_000)), pid = pid)
+                }
             }
+            heapTrends.keys.retainAll(jvms.keys)
             jvmHistory.keys.retainAll(jvms.keys)
             jvmLabels.keys.retainAll(jvms.keys)
         }

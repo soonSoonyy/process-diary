@@ -18,6 +18,7 @@ import io.github.soonsoonyy.processdiary.ProcessActions
 import io.github.soonsoonyy.processdiary.ProcessDiaryService
 import io.github.soonsoonyy.processdiary.data.JavaTools
 import io.github.soonsoonyy.processdiary.data.Jvm
+import io.github.soonsoonyy.processdiary.diary.DiaryLog
 import io.github.soonsoonyy.processdiary.model.ProcInfo
 
 /** 상세 패널의 Java 동작: 스레드 덤프 / 힙 덤프 / GC 실행 */
@@ -30,6 +31,7 @@ object JavaActions {
             override fun run(indicator: ProgressIndicator) {
                 val r = JavaTools.threadDump(p.pid, p.path)
                 if (!r.ok) return fail(project, p, r.output)
+                DiaryLog.add(DiaryLog.Kind.JAVA, PD.msg("diary.java.threadDump", name(p)), project, p.pid)
                 val time = java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date())
                 val header = "# ${PD.msg("java.threadDump.header", name(p), time)}\n\n"
                 ApplicationManager.getApplication().invokeLater {
@@ -52,6 +54,7 @@ object JavaActions {
             override fun run(indicator: ProgressIndicator) {
                 val r = JavaTools.heapDump(p.pid, p.path, file)
                 if (!r.ok) return fail(project, p, r.output)
+                DiaryLog.add(DiaryLog.Kind.JAVA, PD.msg("diary.java.heapDump", name(p), Fmt.mem(file.length()), file.path), project, p.pid)
                 NotificationGroupManager.getInstance().getNotificationGroup("Process Diary")
                     .createNotification(PD.msg("java.heapDump.done", StringUtil.escapeXmlEntities(name(p)), Fmt.mem(file.length()),
                         StringUtil.escapeXmlEntities(file.path)), NotificationType.INFORMATION)
@@ -73,6 +76,7 @@ object JavaActions {
                 val text = if (before > 0 && after >= 0) PD.msg("java.gc.done", StringUtil.escapeXmlEntities(name(p)), Fmt.mem(before), Fmt.mem(after))
                 else PD.msg("java.gc.doneShort", StringUtil.escapeXmlEntities(name(p)))
                 ProcessActions.notify(project, text, NotificationType.INFORMATION)
+                DiaryLog.add(DiaryLog.Kind.JAVA, StringUtil.unescapeXmlEntities(text), project, p.pid)
                 ProcessDiaryService.get().requestNow()
             }
         }.queue()

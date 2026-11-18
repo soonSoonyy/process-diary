@@ -23,6 +23,7 @@ import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import io.github.soonsoonyy.processdiary.PD
+import io.github.soonsoonyy.processdiary.diary.DiaryLog
 import io.github.soonsoonyy.processdiary.ProcessActions
 import io.github.soonsoonyy.processdiary.data.Docker
 import io.github.soonsoonyy.processdiary.model.Container
@@ -208,6 +209,8 @@ class ContainerPanel(private val project: Project) : JPanel(BorderLayout()), Dis
         if (targets.isEmpty()) return
         AppExecutorUtil.getAppExecutorService().execute {
             val errors = targets.mapNotNull { c -> Docker.command(verb, c.id)?.let { "${c.name}: $it" } }
+            val ok = targets.filter { c -> errors.none { it.startsWith(c.name + ":") } }
+            if (ok.isNotEmpty()) DiaryLog.add(DiaryLog.Kind.DOCKER, PD.msg("diary.docker", "docker $verb", ok.joinToString(", ") { it.name }), project)
             if (errors.isNotEmpty()) ProcessActions.notify(project, PD.msg("docker.failedAction") + "<br>" + errors.take(5).joinToString("<br>"), NotificationType.ERROR)
             refresh(withStats = true)
         }

@@ -20,6 +20,7 @@ import com.intellij.util.concurrency.AppExecutorUtil
 import io.github.soonsoonyy.processdiary.ProcessActions
 import io.github.soonsoonyy.processdiary.ProcessDiaryService
 import io.github.soonsoonyy.processdiary.data.Docker
+import io.github.soonsoonyy.processdiary.diary.DiaryLog
 import io.github.soonsoonyy.processdiary.model.Category
 import io.github.soonsoonyy.processdiary.model.Container
 import io.github.soonsoonyy.processdiary.model.ProcInfo
@@ -49,6 +50,7 @@ class RunWatcher(private val project: Project) : ExecutionListener {
         val pid = pidOf(handler)
         tracked[handler] = Tracked(pid, System.currentTimeMillis())
         if (pid != null) RunRegistry.add(RunRegistry.Entry(pid.toInt(), env.runProfile.name, project, handler, executorId, System.currentTimeMillis()))
+        DiaryLog.add(DiaryLog.Kind.RUN_START, PD.msg("diary.run.start", env.runProfile.name, pid?.toString() ?: "?"), project, pid?.toInt() ?: 0)
         if (ProcessDiarySettings.get().state.watchPortConflicts) handler.addProcessListener(PortConflictListener(project, env, pid))
         ensureSampler()
     }
@@ -61,6 +63,7 @@ class RunWatcher(private val project: Project) : ExecutionListener {
         RunRegistry.remove(handler)
         val t = tracked.remove(handler) ?: return
         val name = env.runProfile.name
+        DiaryLog.add(DiaryLog.Kind.RUN_END, PD.msg("diary.run.end", name, Fmt.uptime(System.currentTimeMillis() - t.startedAt), exitCode), project, t.pid?.toInt() ?: 0)
         // 종료 처리가 끝날 시간을 준 뒤 확인
         AppExecutorUtil.getAppScheduledExecutorService().schedule({ checkLeftovers(name, t) }, 2500, TimeUnit.MILLISECONDS)
     }
@@ -109,6 +112,7 @@ class RunWatcher(private val project: Project) : ExecutionListener {
         val roots = leftovers.filter { it.ppid !in ids }
         val list = leftovers.take(5).joinToString(", ") { "${StringUtil.escapeXmlEntities(it.displayName)} (${it.pid})" } +
             if (leftovers.size > 5) " " + PD.msg("kill.confirm.more", leftovers.size - 5) else ""
+        DiaryLog.add(DiaryLog.Kind.LEFTOVER, PD.msg("diary.leftover", runName, leftovers.take(5).joinToString(", ") { "${it.displayName} (${it.pid})" }), project, roots.first().pid)
         NotificationGroupManager.getInstance().getNotificationGroup("Process Diary")
             .createNotification(
                 PD.msg("leftover.title"),
@@ -165,6 +169,8 @@ class PortConflictListener(
                 (if (p.cwd.isNotEmpty()) " · ${StringUtil.escapeXmlEntities(Fmt.shortPath(p.cwd))}" else "")
         }
         val runName = env.runProfile.name
+        DiaryLog.add(DiaryLog.Kind.PORT_CONFLICT, PD.msg("diary.conflict", port, runName,
+            owners.joinToString(", ") { pid -> byPid[pid]?.let { "${it.displayName} (PID $pid)" } ?: "PID $pid" }), project, owners.first())
         val canKill = owners.none { ProcessActions.isProtected(it) }
         val n = NotificationGroupManager.getInstance().getNotificationGroup("Process Diary")
             .createNotification(
@@ -201,6 +207,7 @@ class PortConflictListener(
 
     /** 자동 처리 결과 알림 ([자동 처리 끄기] 포함) */
     private fun notifyAuto(port: Int, what: String) {
+        DiaryLog.add(DiaryLog.Kind.PORT_AUTO, PD.msg("diary.auto", port, what, env.runProfile.name), project)
         NotificationGroupManager.getInstance().getNotificationGroup("Process Diary")
             .createNotification(PD.msg("conflict.auto.title", port),
                 PD.msg("conflict.auto.body", StringUtil.escapeXmlEntities(what), StringUtil.escapeXmlEntities(env.runProfile.name)),
@@ -214,6 +221,7 @@ class PortConflictListener(
 
     private fun reportContainers(port: Int, containers: List<Container>, showInDiary: Boolean) {
         val runName = env.runProfile.name
+        DiaryLog.add(DiaryLog.Kind.PORT_CONFLICT, PD.msg("diary.conflict", port, runName, containers.joinToString(", ") { PD.msg("conflict.auto.container", it.name) }), project)
         val desc = containers.joinToString("<br>") { c ->
             PD.msg("conflict.container", StringUtil.escapeXmlEntities(c.name), StringUtil.escapeXmlEntities(c.image))
         }
@@ -237,7 +245,10 @@ class PortConflictListener(
             if (restart) {
                 ApplicationManager.getApplication().invokeLater({ if (!project.isDisposed) ExecutionUtil.restart(env) }, project.disposed)
                 if (auto != null) notifyAuto(port, auto)
-                else ProcessActions.notify(project, PD.msg("conflict.rerunning", port, StringUtil.escapeXmlEntities(env.runProfile.name)), NotificationType.INFORMATION)
+                else {
+                    DiaryLog.add(DiaryLog.Kind.PORT_FREED, PD.msg("diary.freed", port, env.runProfile.name), project)
+                    ProcessActions.notify(project, PD.msg("conflict.rerunning", port, StringUtil.escapeXmlEntities(env.runProfile.name)), NotificationType.INFORMATION)
+                }
             } else {
                 ProcessActions.notify(project, PD.msg("docker.stopped", containers.joinToString(", ") { StringUtil.escapeXmlEntities(it.name) }), NotificationType.INFORMATION)
             }
@@ -261,7 +272,10 @@ class PortConflictListener(
             if (restart) {
                 ApplicationManager.getApplication().invokeLater({ if (!project.isDisposed) ExecutionUtil.restart(env) }, project.disposed)
                 if (auto != null) notifyAuto(port, auto)
-                else ProcessActions.notify(project, PD.msg("conflict.rerunning", port, StringUtil.escapeXmlEntities(env.runProfile.name)), NotificationType.INFORMATION)
+                else {
+                    DiaryLog.add(DiaryLog.Kind.PORT_FREED, PD.msg("diary.freed", port, env.runProfile.name), project)
+                    ProcessActions.notify(project, PD.msg("conflict.rerunning", port, StringUtil.escapeXmlEntities(env.runProfile.name)), NotificationType.INFORMATION)
+                }
             } else {
                 ProcessActions.notifyResult(project, r)
             }

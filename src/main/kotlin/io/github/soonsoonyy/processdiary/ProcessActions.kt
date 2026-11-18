@@ -1,6 +1,7 @@
 package io.github.soonsoonyy.processdiary
 
 import com.intellij.ide.BrowserUtil
+import io.github.soonsoonyy.processdiary.diary.DiaryLog
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.ide.CopyPasteManager
@@ -31,10 +32,11 @@ object ProcessActions {
     fun killNow(pids: List<Int>, force: Boolean, tree: Boolean, names: Map<Int, String> = emptyMap()): KillResult {
         var done = 0
         val failed = ArrayList<String>()
+        val stopped = ArrayList<String>()
         // IDE 의 Run 으로 띄운 프로세스는 IDE 를 통해 멈춤 (Run 창 상태가 맞고, IDE 가 하위 프로세스까지 정리함)
         val viaIde = if (force) emptyList() else pids.mapNotNull { io.github.soonsoonyy.processdiary.runs.RunRegistry.root(it) }
         for (e in viaIde) {
-            try { e.handler.destroyProcess(); done++ } catch (_: Exception) { failed += PD.msg("kill.fail.denied", e.name) }
+            try { e.handler.destroyProcess(); done++; stopped += "${e.name} (PID ${e.pid})" } catch (_: Exception) { failed += PD.msg("kill.fail.denied", e.name) }
         }
         val skip = viaIde.map { it.pid }.toSet()
         val order = LinkedHashSet<Int>()
@@ -62,7 +64,11 @@ object ProcessActions {
                     else -> h.get().destroy()
                 }
             } catch (_: Exception) { false }
-            if (ok) done++ else failed += PD.msg("kill.fail.denied", name)
+            if (ok) { done++; stopped += "$name (PID $pid)" } else failed += PD.msg("kill.fail.denied", name)
+        }
+        if (stopped.isNotEmpty()) {
+            val more = if (stopped.size > 6) " " + PD.msg("kill.confirm.more", stopped.size - 6) else ""
+            DiaryLog.add(DiaryLog.Kind.STOP, PD.msg(if (force) "diary.stopped.force" else "diary.stopped", stopped.take(6).joinToString(", ") + more), pid = pids.firstOrNull() ?: 0)
         }
         return KillResult(done, failed)
     }
