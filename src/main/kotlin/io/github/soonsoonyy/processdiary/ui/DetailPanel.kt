@@ -230,6 +230,34 @@ class DetailPanel(
         kv(PD.msg("detail.parent"), if (parent != null) a("pid:${parent.pid}", "${parent.name} (${parent.pid})") else "-")
         sb.append("</table>")
 
+        d?.actuator?.let { act ->
+            val color = when (act.status) {
+                "UP" -> hex(Palette.NET_RX)
+                "DOWN", "OUT_OF_SERVICE" -> hex(Palette.DISK_W)
+                else -> dim
+            }
+            sb.append("<div style='margin-top:8px'><b>${PD.msg("detail.actuator")}</b> <span style='color:$dim'>${esc(act.baseUrl)}</span>")
+            val statusText = when {
+                act.status.isNotEmpty() -> "<span style='color:$color'><b>● ${esc(act.status)}</b></span>"
+                act.healthNeedsLogin -> "<span style='color:$dim'>${PD.msg("detail.actuator.login")}</span>"
+                else -> "<span style='color:$dim'>${PD.msg("detail.actuator.noHealth")}</span>"
+            }
+            sb.append("<br>${PD.msg("detail.actuator.health")}: $statusText")
+            if (act.components.isNotEmpty()) {
+                sb.append("<br><span style='color:$dim'>" + act.components.joinToString(" · ") { c ->
+                    val cc = when (c.status) { "UP" -> hex(Palette.NET_RX); "DOWN", "OUT_OF_SERVICE" -> hex(Palette.DISK_W); else -> dim }
+                    "${esc(c.name)} <span style='color:$cc'>${esc(c.status)}</span>"
+                } + "</span>")
+            }
+            if (act.appName.isNotEmpty() || act.appVersion.isNotEmpty()) {
+                sb.append("<br>${PD.msg("detail.actuator.app")}: ${esc(listOf(act.appName, act.appVersion).filter { it.isNotEmpty() }.joinToString(" "))}")
+            }
+            // 자주 쓰는 엔드포인트 먼저
+            val order = listOf("health", "info", "metrics", "env", "loggers", "mappings", "beans", "configprops", "threaddump", "prometheus")
+            val eps = act.endpoints.entries.sortedWith(compareBy({ order.indexOf(it.key).let { i -> if (i < 0) 99 else i } }, { it.key }))
+            if (eps.isNotEmpty()) sb.append("<br>" + eps.take(14).joinToString(" &nbsp;") { a("url:${it.value}", it.key) })
+            sb.append("</div>")
+        }
         sb.append("<div style='margin-top:8px'><b>${PD.msg("detail.network")}</b>")
         when {
             d == null -> sb.append("<br><span style='color:$dim'>${PD.msg("common.loading")}</span>")
@@ -277,6 +305,7 @@ class DetailPanel(
             d.startsWith("pid:") -> d.substring(4).toIntOrNull()?.let(onSelect)
             d.startsWith("cwd:") -> onSearchCwd(d.substring(4))
             d.startsWith("open:") -> d.substring(5).toIntOrNull()?.let { ProcessActions.openPort(it) }
+            d.startsWith("url:") -> com.intellij.ide.BrowserUtil.browse(d.substring(4))
             d.startsWith("kill:") && p != null -> onKill(p, d == "kill:9")
             d.startsWith("copy:") -> ProcessActions.copy(d.substring(5), null)
             d.startsWith("java:") && p != null -> onJava(p, d.substring(5))

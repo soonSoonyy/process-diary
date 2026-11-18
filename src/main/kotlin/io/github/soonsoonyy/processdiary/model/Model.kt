@@ -58,6 +58,8 @@ data class ProcDetail(
     val conns: List<Conn>,
     /** 이 프로세스가 대신 열어 둔 포트의 Docker 컨테이너 (docker-proxy, Docker Desktop 등) */
     val containers: List<Container> = emptyList(),
+    /** Spring Boot Actuator (Java 프로세스가 연 포트에 있으면) */
+    val actuator: io.github.soonsoonyy.processdiary.data.Actuator.Info? = null,
 )
 
 /** Docker 컨테이너 한 개 (docker ps 결과) */

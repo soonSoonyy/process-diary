@@ -9,6 +9,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.util.Disposer
 import com.intellij.util.concurrency.AppExecutorUtil
 import io.github.soonsoonyy.processdiary.alerts.UsageAlerts
+import io.github.soonsoonyy.processdiary.data.Actuator
 import io.github.soonsoonyy.processdiary.data.Collector
 import io.github.soonsoonyy.processdiary.data.Docker
 import io.github.soonsoonyy.processdiary.data.Jvm
@@ -174,7 +175,18 @@ class ProcessDiaryService : Disposable {
                 val cs = try { (Docker.list(all = false) as? Docker.Result.Ok)?.containers.orEmpty() } catch (e: Throwable) { LOG.debug(e); emptyList() }
                 d = d.copy(containers = cs.filter { c -> c.hostPorts.any { it in p.ports } })
             }
-            ApplicationManager.getApplication().invokeLater({ onLoaded(d) }, ModalityState.any())
+            // Java 서버면 Spring Boot Actuator 확인 (처음엔 시간이 걸릴 수 있으므로 상세 정보를 먼저 보여준 뒤 다시 전달)
+            if (d != null && p != null && p.jvm != null && p.ports.isNotEmpty()) {
+                val (known, info) = Actuator.cached(pid, p.ports)
+                if (known) d = d.copy(actuator = info)
+                else {
+                    val first = d
+                    ApplicationManager.getApplication().invokeLater({ onLoaded(first) }, ModalityState.any())
+                    d = d.copy(actuator = try { Actuator.probe(pid, p.ports) } catch (e: Throwable) { LOG.debug(e); null })
+                }
+            }
+            val result = d
+            ApplicationManager.getApplication().invokeLater({ onLoaded(result) }, ModalityState.any())
         }
     }
 
