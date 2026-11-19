@@ -1,5 +1,6 @@
 package io.github.soonsoonyy.processdiary.data
 
+import io.github.soonsoonyy.processdiary.settings.ProcessDiarySettings
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -37,8 +38,6 @@ object Actuator {
 
     private val cache = ConcurrentHashMap<String, Cached>()
 
-    /** 경로 후보: 기본값 /actuator, Spring Boot 1.x 와 흔한 변경값 */
-    private val BASES = listOf("/actuator", "/manage", "/management")
 
     /** 이 포트들 중 Actuator 가 있는 곳 (결과는 10초, 없으면 60초 동안 기억) */
     fun probe(pid: Int, ports: List<Int>): Info? {
@@ -47,7 +46,7 @@ object Actuator {
         cache[key]?.let { if (now - it.at < (if (it.info != null) 10_000 else 60_000)) return it.info }
         var info: Info? = null
         loop@ for (port in ports.take(5)) {
-            for (base in BASES) {
+            for (base in paths()) {
                 // 응답이 없으면 HTTP 포트가 아님 (Gradle 데몬 등): 다른 경로는 묻지 않음
                 val r = get("http://127.0.0.1:$port$base") ?: break
                 if (r.first == 200) {
@@ -59,6 +58,11 @@ object Actuator {
         cache[key] = Cached(now, info)
         return info
     }
+
+    /** 찾을 경로 (설정, 읽지 못하면 기본값) */
+    private fun paths(): List<String> = try {
+        ProcessDiarySettings.parsePaths(ProcessDiarySettings.get().state.actuatorPaths)
+    } catch (_: Throwable) { ProcessDiarySettings.parsePaths(ProcessDiarySettings.DEFAULT_ACTUATOR_PATHS) }
 
     fun clearCache() = cache.clear()
 

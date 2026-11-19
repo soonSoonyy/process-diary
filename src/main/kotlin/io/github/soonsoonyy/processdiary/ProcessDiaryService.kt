@@ -148,10 +148,13 @@ class ProcessDiaryService : Disposable {
             cpuHistory.keys.retainAll(byPid.keys)
             memHistory.keys.retainAll(byPid.keys)
         }
+        val trendOn = ProcessDiarySettings.get().state.heapTrend
+        if (!trendOn) heapTrends.clear()
         if (jvms != null) {
             for ((pid, j) in jvms) {
                 jvmHistory.getOrPut(pid) { ArrayDeque() }.also { it.addLast(j.stats); if (it.size > HISTORY) it.removeFirst() }
                 j.label?.let { jvmLabels[pid] = it }
+                if (!trendOn) continue
                 val trend = heapTrends.getOrPut(pid) { HeapTrend() }
                 trend.add(sys.time, j.stats.heapUsed)
                 // 누수 의심은 다이어리에 한 번만 기록
@@ -172,6 +175,14 @@ class ProcessDiaryService : Disposable {
         if (jvms != null) try { alerts.checkGc(sys.time, jvmHistory.keys.toList(), ::gcPercent) { jvmLabels[it] } } catch (e: Throwable) { LOG.warn(e) }
     }
 
+    /** 설정이 바뀌면 열려 있는 화면을 바로 다시 그림 */
+    fun settingsChanged() {
+        ApplicationManager.getApplication().invokeLater({
+            if (!ProcessDiarySettings.get().state.heapTrend) heapTrends.clear()
+            for (s in subscribers) try { s.onUpdate() } catch (e: Throwable) { LOG.warn(e) }
+        }, ModalityState.any())
+    }
+
     /** 포트를 쓰는 프로세스 PID (백그라운드 스레드에서 호출) */
     fun listenersOnPort(port: Int): List<Int> = try { collector?.listenersOnPort(port) ?: emptyList() } catch (e: Throwable) { LOG.debug(e); emptyList() }
 
@@ -189,7 +200,7 @@ class ProcessDiaryService : Disposable {
                 d = d.copy(containers = cs.filter { c -> c.hostPorts.any { it in p.ports } })
             }
             // Java 서버면 Spring Boot Actuator 확인 (처음엔 시간이 걸릴 수 있으므로 상세 정보를 먼저 보여준 뒤 다시 전달)
-            if (d != null && p != null && p.jvm != null && p.ports.isNotEmpty()) {
+            if (d != null && p != null && p.jvm != null && p.ports.isNotEmpty() && ProcessDiarySettings.get().state.actuator) {
                 val (known, info) = Actuator.cached(pid, p.ports)
                 if (known) d = d.copy(actuator = info)
                 else {

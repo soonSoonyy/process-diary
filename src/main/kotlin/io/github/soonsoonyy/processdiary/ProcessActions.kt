@@ -19,6 +19,8 @@ object ProcessActions {
     /** 종료 결과 */
     data class KillResult(val done: Int, val failed: List<String>)
 
+    private fun stopViaIde() = try { io.github.soonsoonyy.processdiary.settings.ProcessDiarySettings.get().state.stopViaIde } catch (_: Throwable) { true }
+
     /** 하위 프로세스 PID (깊은 것부터: 자식을 먼저 종료해야 부모가 다시 띄우지 못함) */
     fun descendantsOf(pid: Int): List<Int> = try {
         ProcessHandle.of(pid.toLong()).map { h -> h.descendants().toList() }.orElse(emptyList())
@@ -34,7 +36,7 @@ object ProcessActions {
         val failed = ArrayList<String>()
         val stopped = ArrayList<String>()
         // IDE 의 Run 으로 띄운 프로세스는 IDE 를 통해 멈춤 (Run 창 상태가 맞고, IDE 가 하위 프로세스까지 정리함)
-        val viaIde = if (force) emptyList() else pids.mapNotNull { io.github.soonsoonyy.processdiary.runs.RunRegistry.root(it) }
+        val viaIde = if (force || !stopViaIde()) emptyList() else pids.mapNotNull { io.github.soonsoonyy.processdiary.runs.RunRegistry.root(it) }
         for (e in viaIde) {
             try { e.handler.destroyProcess(); done++; stopped += "${e.name} (PID ${e.pid})" } catch (_: Exception) { failed += PD.msg("kill.fail.denied", e.name) }
         }

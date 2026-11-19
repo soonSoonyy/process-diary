@@ -8,6 +8,7 @@ import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import io.github.soonsoonyy.processdiary.settings.ProcessDiarySettings
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -50,12 +51,30 @@ class DiaryLog : SimplePersistentStateComponent<DiaryLog.Options>(Options()) {
     }
 
     companion object {
+        /** 기본 최대 개수 (설정에서 500~5000) */
         const val MAX = 2000
         fun get(): DiaryLog = service()
 
-        /** 어디서든 한 줄로 기록 (프로젝트를 모르면 null) */
-        fun add(kind: Kind, text: String, project: Project? = null, pid: Int = 0) =
-            try { get().add(Entry(System.currentTimeMillis(), kind, project?.name.orEmpty(), pid, text)) } catch (_: Throwable) {}
+        /** 어디서든 한 줄로 기록 (프로젝트를 모르면 null). 설정에서 끈 종류는 기록하지 않음 */
+        fun add(kind: Kind, text: String, project: Project? = null, pid: Int = 0) {
+            try { if (enabled(kind)) get().add(Entry(System.currentTimeMillis(), kind, project?.name.orEmpty(), pid, text)) } catch (_: Throwable) {}
+        }
+
+        fun enabled(kind: Kind): Boolean {
+            val o = ProcessDiarySettings.get().state
+            if (!o.diary) return false
+            return when (kind.group) {
+                Group.RUNS -> o.diaryRuns
+                Group.PORTS -> o.diaryPorts
+                Group.STOPS -> o.diaryStops
+                Group.ALERTS -> o.diaryAlerts
+                Group.TOOLS -> o.diaryTools
+                Group.ALL -> true
+            }
+        }
+
+        /** 보관할 최대 개수 (설정) */
+        fun max(): Int = try { ProcessDiarySettings.get().state.diaryMax.takeIf { it in ProcessDiarySettings.DIARY_MAX } ?: MAX } catch (_: Throwable) { MAX }
     }
 
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
@@ -66,13 +85,19 @@ class DiaryLog : SimplePersistentStateComponent<DiaryLog.Options>(Options()) {
     fun add(e: Entry) {
         synchronized(this) {
             // 목록을 새로 대입해야 변경으로 인식되어 저장됨
-            state.entries = (state.entries + e.encode()).takeLast(MAX).toMutableList()
+            state.entries = (state.entries + e.encode()).takeLast(max()).toMutableList()
         }
         listeners.forEach { try { it() } catch (_: Throwable) {} }
     }
 
     /** 최근 것부터 */
     fun entries(): List<Entry> = synchronized(this) { state.entries.mapNotNull(Entry::decode) }.asReversed()
+
+    /** 최대 개수를 줄였을 때 오래된 기록 정리 */
+    fun trim() {
+        synchronized(this) { if (state.entries.size > max()) state.entries = state.entries.takeLast(max()).toMutableList() }
+        listeners.forEach { try { it() } catch (_: Throwable) {} }
+    }
 
     fun clear() {
         synchronized(this) { state.entries = mutableListOf() }

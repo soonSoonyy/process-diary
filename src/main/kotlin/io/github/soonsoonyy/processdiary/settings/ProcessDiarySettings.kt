@@ -46,6 +46,21 @@ class ProcessDiarySettings : SimplePersistentStateComponent<ProcessDiarySettings
         var alertSec by property(60)
         /** docker 실행 파일 경로 (비우면 자동으로 찾음) */
         var dockerPath by string("")
+        /** IDE 실행: 표에 Run 설정 이름 표시 / 종료는 IDE 를 통해 */
+        var showRunNames by property(true)
+        var stopViaIde by property(true)
+        /** Java: Spring Boot Actuator 확인과 경로, 힙 장기 추이 */
+        var actuator by property(true)
+        var actuatorPaths by string("/actuator, /manage, /management")
+        var heapTrend by property(true)
+        /** 다이어리: 기록 여부, 종류별 기록, 최대 개수 */
+        var diary by property(true)
+        var diaryRuns by property(true)
+        var diaryPorts by property(true)
+        var diaryStops by property(true)
+        var diaryAlerts by property(true)
+        var diaryTools by property(true)
+        var diaryMax by property(2000)
     }
 
     companion object {
@@ -53,6 +68,14 @@ class ProcessDiarySettings : SimplePersistentStateComponent<ProcessDiarySettings
         val ALERT_PCTS = listOf(80, 85, 90, 95)
         val ALERT_SECS = listOf(30, 60, 120, 300)
         val GC_PCTS = listOf(10, 25, 50)
+        val DIARY_MAX = listOf(500, 1000, 2000, 5000)
+        const val DEFAULT_ACTUATOR_PATHS = "/actuator, /manage, /management"
+
+        /** "/actuator, manage" → ["/actuator", "/manage"] (최대 5개, 비면 기본값) */
+        fun parsePaths(text: String?): List<String> =
+            (text ?: "").split(',', ' ', ';').map { it.trim().trimEnd('/') }.filter { it.isNotEmpty() }
+                .map { if (it.startsWith("/")) it else "/$it" }.distinct().take(5)
+                .ifEmpty { parsePaths(DEFAULT_ACTUATOR_PATHS) }
         fun get(): ProcessDiarySettings = service()
     }
 

@@ -20,6 +20,7 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import io.github.soonsoonyy.processdiary.PD
 import io.github.soonsoonyy.processdiary.diary.DiaryLog
+import io.github.soonsoonyy.processdiary.settings.ProcessDiarySettings
 import io.github.soonsoonyy.processdiary.diary.DiaryLog.Kind
 import java.awt.BorderLayout
 import java.awt.FlowLayout
@@ -110,6 +111,7 @@ class DiaryPanel(private val project: Project) : JPanel(BorderLayout()), Disposa
     }
 
     fun rebuild() {
+        table.emptyText.text = PD.msg(if (ProcessDiarySettings.get().state.diary) "diary.empty" else "diary.off")
         val group = (groupBox.selectedItem as GroupChoice).group
         val q = search.text.trim().lowercase()
         val rows = log.entries().filter { e ->

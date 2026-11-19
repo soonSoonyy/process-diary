@@ -12,6 +12,7 @@
 - Spring Boot Actuator: health status and components, app name and version, and endpoint links in the detail panel
 - Diary tab: a saved log of runs, port conflicts, stopped processes, alerts and Docker / Java actions, with filters; heap-after-GC trend over 6 hours with a memory leak hint
 - "Report on GitHub" in the IDE error dialog opens a prefilled issue
+- Settings for all of the above: run configuration names, stopping through the IDE, Actuator on/off and paths, heap trend, diary on/off, which events to record and how many to keep
 - Containers tab: Docker containers with published ports, CPU and memory; start, stop, restart, remove; "This project only" for docker compose
 - Port conflicts caused by a Docker container now offer "Stop container and rerun" instead of stopping Docker's port forwarder
 - Usage alerts: notify when CPU or memory stays above a limit (default 90% for 1 minute), with the top processes and a Stop button
@@ -27,6 +28,7 @@
 - Spring Boot Actuator: 상태(health)와 구성 요소, 앱 이름·버전, 엔드포인트 링크
 - 다이어리 탭: 실행·포트 충돌·종료·경고·Docker/Java 동작 기록 (저장됨), GC 후 힙 6시간 추이와 메모리 누수 의심 기록
 - IDE 오류 창에서 "GitHub에 보고"로 내용이 채워진 이슈 열기
+- 위 기능들을 설정 화면에서 켜고 끄기: Run 설정 이름 표시, IDE를 통한 종료, Actuator와 경로, 힙 추이, 다이어리와 기록 종류·보관 개수
 - 컨테이너 탭: Docker 컨테이너 목록, 게시 포트, 시작·정지·재시작·삭제
 - Docker 컨테이너 때문에 생긴 포트 충돌은 "컨테이너 정지 후 다시 실행"으로 해결
 - 사용량 경고: CPU나 메모리가 기준(기본 90%, 1분)을 계속 넘으면 알림

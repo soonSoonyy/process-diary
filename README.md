@@ -147,7 +147,18 @@ IDE 오류 창(오른쪽 아래 빨간 표시)에서 이 플러그인의 오류�
 - 갱신 주기: 1초 / 2초 / 5초
 - 상태 표시줄 형식: CPU · 메모리 / CPU만 / 네트워크 속도 / CPU · 메모리 · 네트워크
 - 처음 보기 범위: 프로젝트에서 처음 도구 창을 열 때 쓸 범위
-- Run/Debug 감시 켜기·끄기: 포트 충돌 알림, 남은 프로세스 알림
+- 화면 언어: IDE 언어 따르기 / 한국어 / English
+- **Run/Debug**: 포트 충돌 알림, 그중 이 프로젝트에서 남겨진 것은 자동 처리, 남은 프로세스 알림, Run 설정 이름 표시, IDE를 통해 종료
+- **Java**: Spring Boot Actuator 확인과 찾을 경로(기본 `/actuator, /manage, /management`), GC 후 힙 추이와 누수 의심 기록
+- **사용량 경고**: CPU · 메모리 · GC 시간 기준과 지속 시간
+- **다이어리**: 켜기·끄기, 기록할 종류(실행 / 포트 충돌 / 종료한 프로세스 / 경고 / Docker와 Java), 최대 보관 개수(500 ~ 5000), 지금 지우기
+- **Docker**: docker 명령 경로 (비우면 자동으로 찾음)
+- **업데이트**: GitHub Release 자동 업데이트
+
+하위 항목은 위 항목을 끄면 함께 비활성화됩니다.
+
+![설정 1](docs/screenshots/settings-1.png)
+![설정 2](docs/screenshots/settings-2.png)
 
 ### Run/Debug 감시
 - **포트 충돌 감지**: Run 로그에 "포트가 이미 사용 중" 오류가 나오면(Spring Boot, Node.js, Go, uvicorn, Rails/Puma, create-react-app, Java `BindException`) 그 포트를 쓰는 프로세스를 알려주고 **[종료하고 다시 실행] / [종료만] / [Process Diary에서 보기]** 버튼을 제공합니다. 정상 종료에 응답하지 않으면 강제 종료 후 포트가 비워진 것을 확인하고 다시 실행합니다.

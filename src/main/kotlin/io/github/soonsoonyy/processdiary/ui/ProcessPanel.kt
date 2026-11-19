@@ -140,7 +140,9 @@ class ProcessPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
             tc.preferredWidth = JBUI.scale(c.width)
             if (c == Col.CHECK) { tc.maxWidth = JBUI.scale(c.width); tc.minWidth = JBUI.scale(c.width) }
         }
-        table.columnModel.getColumn(Col.NAME.ordinal).cellRenderer = NameRenderer({ treeBox.isSelected }, ::runOf)
+        table.columnModel.getColumn(Col.NAME.ordinal).cellRenderer = NameRenderer({ treeBox.isSelected }) { p ->
+            if (ProcessDiarySettings.get().state.showRunNames) runOf(p) else null
+        }
         table.columnModel.getColumn(Col.PID.ordinal).cellRenderer = TextRenderer(right = true, text = { it.p.pid.toString() })
         table.columnModel.getColumn(Col.CPU.ordinal).cellRenderer = BarRenderer(Palette.CPU, { it.p.cpu / 100.0 }, { "%.1f%%".format(it.p.cpu) })
         table.columnModel.getColumn(Col.MEM.ordinal).cellRenderer = BarRenderer(Palette.MEM, { it.p.memPct / 20.0 }, { Fmt.mem(it.p.rssBytes) })
