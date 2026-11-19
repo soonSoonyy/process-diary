@@ -89,8 +89,11 @@ class KillTreeTest : TestCase() {
             assertTrue(r.failed[0], r.failed[0].startsWith("postgres"))
             assertTrue("stopped parent and other children: ${r.done}", r.done >= 2) // 부모 + 나머지 자식
             assertTrue("parent ended", parent.waitFor(10, TimeUnit.SECONDS))
-            Thread.sleep(300)
-            assertTrue("critical child kept", critical.isAlive)
+            // Windows: 자식들이 부모의 콘솔(conhost)을 공유해 콘솔이 닫히면 함께 끝남 (종료 요청을 보내지 않은 것은 위에서 확인)
+            if (!windows) {
+                Thread.sleep(300)
+                assertTrue("critical child kept", critical.isAlive)
+            }
         } finally {
             parent.descendants().forEach { it.destroyForcibly() }
             parent.destroyForcibly()
