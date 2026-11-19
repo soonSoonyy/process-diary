@@ -12,7 +12,6 @@ import oshi.software.os.OSProcess
 import oshi.software.os.OperatingSystem
 import java.io.File
 import java.net.InetAddress
-import java.util.concurrent.TimeUnit
 
 /**
  * OSHI로 시스템/프로세스 정보를 모은다. 이전 샘플과의 차이로 "현재" 사용률과 속도를 계산하므로
@@ -206,10 +205,6 @@ class Collector {
         else -> PD.msg("state.unknown")
     }
 
-    private fun exec(vararg cmd: String): String = try {
-        val pr = ProcessBuilder(*cmd).redirectErrorStream(false).start()
-        val text = pr.inputStream.bufferedReader().readText()
-        pr.waitFor(5, TimeUnit.SECONDS)
-        text
-    } catch (_: Exception) { "" }
+    /** 시간 제한이 있는 외부 명령 실행 (멈춰도 수집 스레드를 붙잡지 않음) */
+    private fun exec(vararg cmd: String): String = Exec.output(*cmd, timeoutMs = 5000)
 }
