@@ -3,6 +3,18 @@
 버전을 올릴 때는 `gradle.properties`의 `pluginVersion`을 바꾸고 이 파일 맨 위에 같은 버전의 항목을 추가하세요.
 `main`에 푸시하면 GitHub Release와 IDE 업데이트가 자동으로 만들어집니다.
 
+## [1.2.1]
+- Safer stopping: a process is no longer stopped if its PID was reused by a different process after you saw it in the list or notification
+- Port conflicts held by Docker, a database server or another IDE are no longer stopped with one click; for Docker, "Stop container and rerun" stops only the container that publishes the port
+- "Stop all" for leftover processes skips Docker, database servers and IDEs; the confirmation dialog warns when you select one yourself
+- Fixed data collection freezing when an external command (lsof) hangs
+- macOS: fixed garbled working directory names containing Korean or other non-ASCII characters
+- 종료 안전성: 목록이나 알림에서 본 뒤 같은 PID를 다른 프로세스가 쓰게 되면 종료하지 않습니다
+- 포트를 Docker·DB 서버·다른 IDE가 쓰고 있으면 한 번 클릭으로 종료하지 않습니다. Docker는 그 포트를 공개한 컨테이너만 정지하고 다시 실행할 수 있습니다
+- 남은 프로세스 "모두 종료"에서 Docker·DB 서버·IDE는 건너뛰고, 직접 종료할 때는 확인창에 경고를 보여줍니다
+- 외부 명령(lsof)이 멈추면 사용량 수집도 함께 멈추던 문제 수정
+- macOS: 작업 폴더 이름의 한글 등이 깨져 보이던 문제 수정
+
 ## [1.2.0]
 - Renamed to Process Diary (new plugin ID io.github.soonsoonyy.processdiary). Uninstall the old "Process Monitor" plugin after installing this one.
 - English and Korean UI: follows the IDE language, or pick one in Settings → Tools → Process Diary → Language

@@ -19,6 +19,9 @@ import com.intellij.openapi.util.text.StringUtil
 import com.intellij.util.concurrency.AppExecutorUtil
 import io.github.soonsoonyy.processdiary.ProcessActions
 import io.github.soonsoonyy.processdiary.ProcessDiaryService
+import io.github.soonsoonyy.processdiary.data.Critical
+import io.github.soonsoonyy.processdiary.data.CriticalKind
+import io.github.soonsoonyy.processdiary.data.Docker
 import io.github.soonsoonyy.processdiary.model.Category
 import io.github.soonsoonyy.processdiary.model.ProcInfo
 import io.github.soonsoonyy.processdiary.settings.ProcessDiarySettings
@@ -98,7 +101,10 @@ class RunWatcher(private val project: Project) : ExecutionListener {
                     (p.cwd == base || p.cwd.startsWith("$base/") || p.cwd.startsWith("$base\\"))) result[p.pid] = p
             }
         }
-        val leftovers = result.values.filter { it.pid !in ideTree && !ProcessActions.isProtected(it.pid) && it.category != Category.SYSTEM }
+        // Docker·DB 서버·IDE는 한 번 클릭으로 종료하면 다른 작업까지 망가지므로 대상에서 뺌
+        val leftovers = result.values.filter {
+            it.pid !in ideTree && !ProcessActions.isProtected(it.pid) && it.category != Category.SYSTEM && Critical.kindOf(it.name, it.path) == null
+        }
         if (leftovers.isEmpty()) return
         // 남은 것들 중 부모-자식 관계면 최상위만 대상으로 (하위는 트리 종료로 함께 처리)
         val ids = leftovers.map { it.pid }.toSet()
@@ -113,7 +119,9 @@ class RunWatcher(private val project: Project) : ExecutionListener {
             )
             .addAction(NotificationAction.createSimpleExpiring(PD.msg("leftover.killAll")) {
                 AppExecutorUtil.getAppExecutorService().execute {
-                    val r = ProcessActions.killNow(roots.map { it.pid }, force = false, tree = true, names = leftovers.associate { it.pid to it.name })
+                    // 알림을 누르기까지 시간이 걸릴 수 있으므로 PID 재사용을 확인하고, 하위의 중요한 프로세스는 건너뜀
+                    val r = ProcessActions.killNow(roots.map { it.pid }, force = false, tree = true,
+                        names = leftovers.associate { it.pid to it.name }, expectedStart = ProcessActions.startTimes(leftovers), skipCritical = true)
                     ProcessActions.notifyResult(project, r)
                     service.requestNow()
                 }
@@ -153,16 +161,30 @@ class PortConflictListener(
                 (if (p.cwd.isNotEmpty()) " · ${StringUtil.escapeXmlEntities(Fmt.shortPath(p.cwd))}" else "")
         }
         val runName = env.runProfile.name
-        val canKill = owners.none { ProcessActions.isProtected(it) }
+        // 포트 주인이 Docker·DB 서버·IDE 이면 그 프로세스를 바로 종료하지 않음
+        val critical = owners.mapNotNull { pid -> byPid[pid]?.let { Critical.kindOf(it.name, it.path) } ?: Critical.kindOf(pid) }.toSet()
+        val containers = if (CriticalKind.DOCKER in critical) Docker.containersPublishing(port) else emptyList()
+        val hint = when {
+            containers.isNotEmpty() -> "<br>" + PD.msg("conflict.container", StringUtil.escapeXmlEntities(containers.joinToString(", ")))
+            CriticalKind.DOCKER in critical -> "<br>" + PD.msg("conflict.critical.docker")
+            critical.isNotEmpty() -> "<br>" + PD.msg("conflict.critical.other", critical.first().label)
+            else -> ""
+        }
+        val canKill = critical.isEmpty() && owners.none { ProcessActions.isProtected(it) }
         val n = NotificationGroupManager.getInstance().getNotificationGroup("Process Diary")
             .createNotification(
                 PD.msg("conflict.title", port),
-                PD.msg("conflict.body", StringUtil.escapeXmlEntities(runName)) + "<br>" + desc,
+                PD.msg("conflict.body", StringUtil.escapeXmlEntities(runName)) + "<br>" + desc + hint,
                 NotificationType.WARNING,
             )
         if (canKill) {
             n.addAction(NotificationAction.createSimpleExpiring(PD.msg("conflict.killRerun")) { killAndMaybeRestart(port, owners, byPid, restart = true) })
             n.addAction(NotificationAction.createSimpleExpiring(PD.msg("conflict.killOnly")) { killAndMaybeRestart(port, owners, byPid, restart = false) })
+        } else if (containers.isNotEmpty()) {
+            // Docker 자체가 아니라 이 포트를 공개한 컨테이너만 멈춤
+            val label = containers.singleOrNull() ?: PD.msg("conflict.containers", containers.size)
+            n.addAction(NotificationAction.createSimpleExpiring(PD.msg("conflict.stopContainerRerun", label)) { stopContainersAndMaybeRestart(port, containers, restart = true) })
+            n.addAction(NotificationAction.createSimpleExpiring(PD.msg("conflict.stopContainer", label)) { stopContainersAndMaybeRestart(port, containers, restart = false) })
         }
         n.addAction(NotificationAction.createSimple(PD.msg("notify.showInToolWindow")) { ProcessToolWindowFactory.showPort(project, port) })
         n.notify(project)
@@ -171,10 +193,12 @@ class PortConflictListener(
     private fun killAndMaybeRestart(port: Int, owners: List<Int>, byPid: Map<Int, ProcInfo>, restart: Boolean) {
         AppExecutorUtil.getAppExecutorService().execute {
             val names = owners.associateWith { byPid[it]?.name ?: "PID $it" }
-            var r = ProcessActions.killNow(owners, force = false, tree = true, names = names)
+            // 알림을 본 뒤 누르기까지 시간이 걸릴 수 있으므로 PID 재사용을 확인
+            val starts = ProcessActions.startTimes(owners.mapNotNull { byPid[it] })
+            var r = ProcessActions.killNow(owners, force = false, tree = true, names = names, expectedStart = starts, skipCritical = true)
             var free = ProcessActions.waitPortFree(port, 5000)
             if (!free) { // 정상 종료에 응답하지 않으면 강제 종료
-                r = ProcessActions.killNow(owners, force = true, tree = true, names = names)
+                r = ProcessActions.killNow(owners, force = true, tree = true, names = names, expectedStart = starts, skipCritical = true)
                 free = ProcessActions.waitPortFree(port, 3000)
             }
             ProcessDiaryService.get().requestNow()
@@ -187,6 +211,26 @@ class PortConflictListener(
                 ProcessActions.notify(project, PD.msg("conflict.rerunning", port, StringUtil.escapeXmlEntities(env.runProfile.name)), NotificationType.INFORMATION)
             } else {
                 ProcessActions.notifyResult(project, r)
+            }
+        }
+    }
+
+    private fun stopContainersAndMaybeRestart(port: Int, containers: List<String>, restart: Boolean) {
+        AppExecutorUtil.getAppExecutorService().execute {
+            val errors = containers.mapNotNull { c -> Docker.stop(c)?.let { "${StringUtil.escapeXmlEntities(c)}: ${StringUtil.escapeXmlEntities(it)}" } }
+            val free = ProcessActions.waitPortFree(port, 5000)
+            ProcessDiaryService.get().requestNow()
+            if (errors.isNotEmpty() || !free) {
+                val body = if (errors.isNotEmpty()) PD.msg("conflict.containerStopFailed") + "<br>" + errors.take(3).joinToString("<br>")
+                else PD.msg("conflict.stillBusy", port)
+                ProcessActions.notify(project, body, NotificationType.ERROR)
+                return@execute
+            }
+            if (restart) {
+                ApplicationManager.getApplication().invokeLater({ if (!project.isDisposed) ExecutionUtil.restart(env) }, project.disposed)
+                ProcessActions.notify(project, PD.msg("conflict.rerunning", port, StringUtil.escapeXmlEntities(env.runProfile.name)), NotificationType.INFORMATION)
+            } else {
+                ProcessActions.notify(project, PD.msg("conflict.containerStopped", StringUtil.escapeXmlEntities(containers.joinToString(", "))), NotificationType.INFORMATION)
             }
         }
     }
