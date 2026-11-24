@@ -95,7 +95,12 @@ class Collector {
         return out
     }
 
-    private fun cwdOf(p: OSProcess): String = try { p.currentWorkingDirectory ?: "" } catch (_: Throwable) { "" }
+    private fun cwdOf(p: OSProcess): String {
+        val cwd = try { p.currentWorkingDirectory ?: "" } catch (_: Throwable) { "" }
+        // OSHI(6.4.x)는 macOS에서 작업 폴더를 US-ASCII로 읽어 한글 등이 '�'로 깨짐 → 깨진 것만 UTF-8로 다시 읽음
+        if (platform == PlatformEnum.MACOS && '\uFFFD' in cwd) return MacProc.cwd(p.processID) ?: cwd
+        return cwd
+    }
 
     /** pid → LISTEN 중인 TCP 포트 (5초 캐시) */
     private fun ports(now: Long): Map<Int, List<Int>> {

@@ -8,10 +8,12 @@
 - Port conflicts held by Docker, a database server or another IDE are no longer stopped with one click; for Docker, "Stop container and rerun" stops only the container that publishes the port
 - "Stop all" for leftover processes skips Docker, database servers and IDEs; the confirmation dialog warns when you select one yourself
 - Fixed data collection freezing when an external command (lsof) hangs
+- macOS: fixed working directories with non-ASCII names (e.g. Korean) being shown as "������"
 - 종료 안전성: 목록이나 알림에서 본 뒤 같은 PID를 다른 프로세스가 쓰게 되면 종료하지 않습니다
 - 포트를 Docker·DB 서버·다른 IDE가 쓰고 있으면 한 번 클릭으로 종료하지 않습니다. Docker는 그 포트를 공개한 컨테이너만 정지하고 다시 실행할 수 있습니다
 - 남은 프로세스 "모두 종료"에서 Docker·DB 서버·IDE는 건너뛰고, 직접 종료할 때는 확인창에 경고를 보여줍니다
 - 외부 명령(lsof)이 멈추면 사용량 수집도 함께 멈추던 문제 수정
+- macOS: 작업 폴더 이름에 한글 등이 있으면 "������"로 깨져 보이던 문제 수정
 
 ## [1.2.0]
 - Renamed to Process Diary (new plugin ID io.github.soonsoonyy.processdiary). Uninstall the old "Process Monitor" plugin after installing this one.

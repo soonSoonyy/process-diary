@@ -4,6 +4,8 @@ import io.github.soonsoonyy.processdiary.data.Collector
 import junit.framework.TestCase
 import java.io.File
 import java.net.ServerSocket
+import java.nio.file.Files
+import java.text.Normalizer
 
 /** 실제 OS에서 OSHI로 정보를 읽어오는지 확인 */
 class CollectorTest : TestCase() {
@@ -48,6 +50,23 @@ class CollectorTest : TestCase() {
             // 포트로 프로세스 찾기 (포트 충돌 알림에서 사용)
             assertTrue("listenersOnPort", self in c.listenersOnPort(server.localPort))
             assertTrue("quickList", c.quickList().any { it.pid == self })
+        }
+    }
+
+    /** 작업 폴더 이름에 한글 등 ASCII가 아닌 글자가 있어도 깨지지 않음 (macOS: OSHI가 US-ASCII로 읽던 문제) */
+    fun testNonAsciiWorkingDirectory() {
+        val dir = Files.createTempDirectory("pd-cwd").resolve("문서-テスト").also { Files.createDirectories(it) }
+        val cmd = if (windows) listOf("ping", "-n", "300", "127.0.0.1") else listOf("sleep", "300")
+        val p = ProcessBuilder(cmd).directory(dir.toFile()).start()
+        try {
+            val cwd = Collector().quickList().first { it.pid == p.pid().toInt() }.cwd
+            if (windows && cwd.isEmpty()) return // Windows는 OSHI가 작업 폴더를 지원하지 않음
+            assertFalse("broken characters: $cwd", '\uFFFD' in cwd)
+            fun norm(f: String) = Normalizer.normalize(File(f).canonicalPath, Normalizer.Form.NFC)
+            assertEquals(norm(dir.toString()), norm(cwd))
+        } finally {
+            p.destroyForcibly()
+            dir.parent.toFile().deleteRecursively()
         }
     }
 }
